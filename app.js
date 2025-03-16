@@ -161,8 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
         loginButton.textContent = 'Giriş yapılıyor...';
         
         try {
-            // API'ye istek at
-            const response = await fetch('http://localhost:3000/api/login', {
+            // API'ye istek at - localhost yerine göreceli URL kullan
+            const response = await fetch('/api/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
