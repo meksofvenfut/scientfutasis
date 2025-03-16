@@ -1831,10 +1831,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (addGradeBtn) {
         // Sadece admin kullanıcılar için ekleme butonunu göster
         if (isAdmin) {
-            addGradeBtn.addEventListener('click', function() {
-                resetGradeForm();
-                openModal(addGradeModal);
-            });
+        addGradeBtn.addEventListener('click', function() {
+            resetGradeForm();
+            openModal(addGradeModal);
+        });
         } else {
             addGradeBtn.style.display = 'none';
         }
