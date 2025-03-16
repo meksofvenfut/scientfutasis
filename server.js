@@ -2301,6 +2301,16 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
     try {
         console.log('Yeni sınav notu ekleme isteği alındı:', req.body);
         
+        // Kullanıcı tipi kontrolü - sadece admin kullanıcılar ekleyebilir
+        const userType = req.body.userType;
+        if (!userType || userType.toLowerCase() !== 'admin') {
+            console.error('Yetkisiz kullanıcı sınav notu ekleme girişimi:', userType);
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Bu işlem için yönetici yetkisi gereklidir' 
+            });
+        }
+        
         // Parametreleri al
         const title = req.body.title;
         const lesson = req.body.lesson;
@@ -2397,6 +2407,16 @@ app.put('/api/grades/update/:id', upload.single('file'), (req, res) => {
     try {
         const gradeId = req.params.id;
         console.log('Sınav notu güncelleme isteği alındı:', gradeId);
+        
+        // Kullanıcı tipi kontrolü - sadece admin kullanıcılar güncelleyebilir
+        const userType = req.body.userType;
+        if (!userType || userType.toLowerCase() !== 'admin') {
+            console.error('Yetkisiz kullanıcı sınav notu güncelleme girişimi:', userType);
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Bu işlem için yönetici yetkisi gereklidir' 
+            });
+        }
         
         // FormData ile gönderilen veriler
         const title = req.body.title;
@@ -2518,6 +2538,16 @@ app.delete('/api/grades/delete/:id', (req, res) => {
     try {
         const gradeId = req.params.id;
         console.log('Sınav notu silme isteği alındı:', gradeId);
+        
+        // Kullanıcı tipi kontrolü - sadece admin kullanıcılar silebilir
+        const userType = req.query.userType; // DELETE isteklerinde body ile değil query ile gönderilir
+        if (!userType || userType.toLowerCase() !== 'admin') {
+            console.error('Yetkisiz kullanıcı sınav notu silme girişimi:', userType);
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Bu işlem için yönetici yetkisi gereklidir' 
+            });
+        }
         
         if (!gradeId) {
             return res.status(400).json({ 

@@ -1829,10 +1829,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     if (addGradeBtn) {
-        addGradeBtn.addEventListener('click', function() {
-            resetGradeForm();
-            openModal(addGradeModal);
-        });
+        // Sadece admin kullanıcılar için ekleme butonunu göster
+        if (isAdmin) {
+            addGradeBtn.addEventListener('click', function() {
+                resetGradeForm();
+                openModal(addGradeModal);
+            });
+        } else {
+            addGradeBtn.style.display = 'none';
+        }
     }
     
     // Form event listeners - Kullanılabilir olmasını sağlamak için bu kısmı kaldıralım
@@ -2020,7 +2025,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                             <div class="card-footer">
                                 <span class="grade-score ${typeClass}">${grade.type}</span>
-                                <div class="action-buttons">
+                                ${isAdmin ? `<div class="action-buttons">
                                     <button class="edit-button" onclick="editGradeItem(${grade.id})">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -2035,7 +2040,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                             <line x1="14" y1="11" x2="14" y2="17"></line>
                                         </svg>
                                     </button>
-                                </div>
+                                </div>` : ''}
                             </div>
                         </div>
                     `;
@@ -2186,14 +2191,14 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('lesson', lesson);
         formData.append('type', type);
         formData.append('examDate', examDate);
-        formData.append('userType', 'admin'); // Sabit değer gönder
+        formData.append('userType', userInfo.userType); // Kullanıcının gerçek tipini gönder
         
         // Dosya varsa ekle
         if (fileInput.files.length > 0) {
             formData.append('file', fileInput.files[0]);
         }
         
-        console.log('Gönderilen userType: admin');
+        console.log('Gönderilen userType:', userInfo.userType);
         
         fetch('/api/grades/add', {
             method: 'POST',
@@ -2223,29 +2228,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const lesson = document.getElementById('editGradeLesson').value;
         const type = document.getElementById('editGradeType').value;
         const examDate = document.getElementById('editGradeDate').value;
-        const fileInput = document.getElementById('editGradeFile');
         const keepExistingFile = document.getElementById('editGradeKeepExistingFile').value;
+        const fileInput = document.getElementById('editGradeFile');
         
         if (!title || !lesson || !type || !examDate) {
             showNotification('Lütfen tüm alanları doldurun.', 'error');
             return;
         }
         
-        // FormData kullanarak dosya ve diğer verileri gönder
         const formData = new FormData();
         formData.append('title', title);
         formData.append('lesson', lesson);
         formData.append('type', type);
         formData.append('examDate', examDate);
-        formData.append('userType', 'admin'); // Sabit değer gönder
         formData.append('keepExistingFile', keepExistingFile);
+        formData.append('userType', userInfo.userType); // Kullanıcının gerçek tipini gönder
         
-        // Dosya varsa ekle
+        // Yeni dosya seçildiyse ekle
         if (fileInput.files.length > 0) {
             formData.append('file', fileInput.files[0]);
         }
         
-        console.log('Güncelleme için gönderilen userType: admin');
+        console.log('Güncelleme için gönderilen userType:', userInfo.userType);
         
         fetch(`/api/grades/update/${gradeId}`, {
             method: 'PUT',
@@ -2271,14 +2275,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function deleteGrade() {
         const gradeId = document.getElementById('deleteGradeId').value;
         
-        console.log('Silme için gönderilen userType: admin');
+        console.log('Silme için gönderilen userType:', userInfo.userType);
         
-        fetch(`/api/grades/delete/${gradeId}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ userType: 'admin' }) // Sabit değer gönder
+        // DELETE isteğiyle query parametresi olarak userType gönder (body ile değil)
+        fetch(`/api/grades/delete/${gradeId}?userType=${encodeURIComponent(userInfo.userType)}`, {
+            method: 'DELETE'
         })
         .then(response => response.json())
         .then(data => {
@@ -2287,7 +2288,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showNotification('Sınav notu başarıyla silindi.', 'success');
                 fetchGrades();
             } else {
-                showNotification(data.error || 'Sınav notu silinirken bir hata oluştu.', 'error');
+                showNotification(data.message || data.error || 'Sınav notu silinirken bir hata oluştu.', 'error');
             }
         })
         .catch(error => {
