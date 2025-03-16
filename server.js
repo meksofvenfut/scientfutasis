@@ -1910,3 +1910,43 @@ app.get('/api/init', (req, res) => {
         );
     }
 }); 
+
+// MEK kullanıcısının tipini güncelleyen endpoint
+app.get('/api/update-mek', (req, res) => {
+    console.log('MEK kullanıcısı admin tipine güncelleniyor...');
+    
+    // PostgreSQL için MEK kullanıcısının tipini güncelle
+    let updateQuery, params;
+    
+    if (isPg) {
+        updateQuery = `UPDATE users SET userType = $1 WHERE username = $2`;
+        params = ['admin', 'MEK'];
+    } else {
+        updateQuery = `UPDATE users SET userType = ? WHERE username = ?`;
+        params = ['admin', 'MEK'];
+    }
+    
+    db.run(updateQuery, params, function(err) {
+        if (err) {
+            console.error('MEK kullanıcısı güncellenirken hata:', err.message);
+            return res.json({ success: false, error: err.message });
+        }
+        
+        console.log('MEK kullanıcısı başarıyla admin tipine güncellendi');
+        
+        // Kullanıcıları listele
+        db.all("SELECT id, username, userType FROM users", [], (err, rows) => {
+            if (err) {
+                console.error('Kullanıcı listesi kontrol edilirken hata:', err.message);
+                return res.json({ success: true, message: 'MEK kullanıcısı güncellendi ama kullanıcılar listelenemedi', users: [] });
+            }
+            
+            console.log('Mevcut kullanıcılar:', rows);
+            return res.json({ 
+                success: true, 
+                message: 'MEK kullanıcısı başarıyla admin tipine güncellendi', 
+                users: rows 
+            });
+        });
+    });
+}); 
