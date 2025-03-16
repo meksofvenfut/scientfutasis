@@ -2251,12 +2251,8 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         // Dosya bilgisi
         const file = req.file;
         
-        // Benzersiz başlık oluştur - zaman damgası ekleyerek
-        const timestamp = new Date().getTime();
-        const uniqueTitle = `${title}_${timestamp}`;
-        
         console.log('İşlenmiş parametreler:', {
-            title: uniqueTitle,
+            title,
             lesson,
             type,
             examDate
@@ -2277,13 +2273,13 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
             `;
-            params = [uniqueTitle, lesson, type, examDate, filePath, fileName, fileSize, now, now];
+            params = [title, lesson, type, examDate, filePath, fileName, fileSize, now, now];
         } else {
             query = `
                 INSERT INTO grades (title, lesson, type, examDate, file_path, file_name, file_size, createdAt, updatedAt)
                 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             `;
-            params = [uniqueTitle, lesson, type, examDate, filePath, fileName, fileSize];
+            params = [title, lesson, type, examDate, filePath, fileName, fileSize];
         }
         
         db.run(query, params, function(err) {
@@ -2296,12 +2292,12 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
                 });
             }
             
-            console.log(`Yeni sınav notu eklendi: ${uniqueTitle} - ID: ${this.lastID || 'unknown'}`);
+            console.log(`Yeni sınav notu eklendi: ${title} - ID: ${this.lastID || 'unknown'}`);
             res.json({ 
                 success: true, 
                 message: 'Sınav notu başarıyla eklendi', 
                 id: this.lastID,
-                title: uniqueTitle,
+                title: title,
                 lesson: lesson,
                 type: type,
                 examDate: examDate
@@ -2318,7 +2314,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
 });
 
 // 3. Sınav notu güncelleme
-app.put('/api/grades/update/:id', (req, res) => {
+app.put('/api/grades/update/:id', upload.single('file'), (req, res) => {
     try {
         const gradeId = req.params.id;
         console.log('Sınav notu güncelleme isteği alındı:', gradeId);
@@ -2328,8 +2324,9 @@ app.put('/api/grades/update/:id', (req, res) => {
         const lesson = req.body.lesson;
         const type = req.body.type;
         const examDate = req.body.examDate;
+        const keepExistingFile = req.body.keepExistingFile === 'true';
         
-        console.log('Güncelleme parametreleri:', { title, lesson, type, examDate });
+        console.log('Güncelleme parametreleri:', { title, lesson, type, examDate, keepExistingFile });
         
         // Gerekli alanların kontrolü
         if (!gradeId || !title || !lesson || !type || !examDate) {
@@ -2340,24 +2337,60 @@ app.put('/api/grades/update/:id', (req, res) => {
             });
         }
         
+        // Dosya bilgisi
+        const file = req.file;
+        let filePath = null;
+        let fileName = null;
+        let fileSize = null;
+        
+        if (file) {
+            filePath = file.path;
+            fileName = file.originalname;
+            fileSize = file.size;
+            console.log('Yeni dosya yüklendi:', fileName);
+        }
+        
         const now = new Date().toISOString();
         let query, params;
         
-        if (isPg) {
-            query = `
-                UPDATE grades 
-                SET title = $1, lesson = $2, type = $3, "examDate" = $4, "updatedAt" = $5
-                WHERE id = $6
-                RETURNING id
-            `;
-            params = [title, lesson, type, examDate, now, gradeId];
+        // Yeni dosya yüklendiyse veya mevcut dosya kaldırıldıysa dosya bilgilerini güncelle
+        if (file || !keepExistingFile) {
+            if (isPg) {
+                query = `
+                    UPDATE grades 
+                    SET title = $1, lesson = $2, type = $3, "examDate" = $4, "updatedAt" = $5, 
+                        file_path = $6, file_name = $7, file_size = $8
+                    WHERE id = $9
+                    RETURNING id
+                `;
+                params = [title, lesson, type, examDate, now, filePath, fileName, fileSize, gradeId];
+            } else {
+                query = `
+                    UPDATE grades 
+                    SET title = ?, lesson = ?, type = ?, examDate = ?, updatedAt = CURRENT_TIMESTAMP,
+                        file_path = ?, file_name = ?, file_size = ?
+                    WHERE id = ?
+                `;
+                params = [title, lesson, type, examDate, filePath, fileName, fileSize, gradeId];
+            }
         } else {
-            query = `
-                UPDATE grades 
-                SET title = ?, lesson = ?, type = ?, examDate = ?, updatedAt = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `;
-            params = [title, lesson, type, examDate, gradeId];
+            // Dosya değişmiyorsa sadece diğer bilgileri güncelle
+            if (isPg) {
+                query = `
+                    UPDATE grades 
+                    SET title = $1, lesson = $2, type = $3, "examDate" = $4, "updatedAt" = $5
+                    WHERE id = $6
+                    RETURNING id
+                `;
+                params = [title, lesson, type, examDate, now, gradeId];
+            } else {
+                query = `
+                    UPDATE grades 
+                    SET title = ?, lesson = ?, type = ?, examDate = ?, updatedAt = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                `;
+                params = [title, lesson, type, examDate, gradeId];
+            }
         }
         
         db.run(query, params, function(err) {
