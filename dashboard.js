@@ -2449,10 +2449,15 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch('/api/users')
             .then(response => response.json())
             .then(data => {
-                if (data.success) {
+                // Sunucu artık direkt kullanıcı dizisi dönüyor, eskiden success/users yapısı vardı
+                console.log('Kullanıcı verileri:', data);
+                
+                if (Array.isArray(data)) {
+                    displayUsers(data);
+                } else if (data.users && Array.isArray(data.users)) {
                     displayUsers(data.users);
                 } else {
-                    console.error('Kullanıcılar çekilirken hata oluştu:', data.message);
+                    console.error('Kullanıcı verisi beklendiği formatta değil:', data);
                     showNotification('Kullanıcılar yüklenirken bir hata oluştu.', 'error');
                 }
             })
