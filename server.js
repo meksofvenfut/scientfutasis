@@ -120,7 +120,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/api', (req, res, next) => {
     // Her API isteği için önbellek başlıklarını ayarla
     res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('X-Cache-Control', 'no-cache'); // Pragma header'ını değiştirdim
     res.setHeader('Expires', '0');
     res.setHeader('Surrogate-Control', 'no-store');
     res.setHeader('Vary', 'Accept, Accept-Encoding, Origin');
@@ -304,43 +304,84 @@ db.serialize(() => {
     db.run(gradesTableSQL);
     
     // Var olan veritabanında importance sütunu var mı kontrol et
-    db.all("PRAGMA table_info(announcements)", [], (err, rows) => {
-        if (err) {
-            console.error("Tablo bilgisi alınamadı:", err);
-            return;
-        }
+    if (isPg) {
+        const query = `
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'announcements' 
+            AND column_name = 'importance'
+        `;
         
-        // importance sütunu var mı kontrol et
-        let hasImportance = false;
-        if (rows && rows.length > 0) {
-            rows.forEach(row => {
-                if (row.name === 'importance') {
-                    hasImportance = true;
-                }
-            });
+        db.all(query, [], (err, rows) => {
+            if (err) {
+                console.error("PostgreSQL sütun bilgisi alınamadı:", err);
+                return;
+            }
+            
+            // Importance sütunu var mı kontrol et
+            const hasImportance = rows && rows.length > 0;
             
             // Eğer importance sütunu yoksa ekle
             if (!hasImportance) {
-                console.log("announcements tablosuna importance sütunu ekleniyor...");
+                console.log("announcements tablosuna importance sütunu ekleniyor (PostgreSQL)...");
                 db.run("ALTER TABLE announcements ADD COLUMN importance TEXT DEFAULT 'normal'", [], function(err) {
                     if (err) {
-                        console.error("Sütun eklenemedi:", err);
+                        console.error("PostgreSQL sütun eklenemedi:", err);
                     } else {
-                        console.log("importance sütunu başarıyla eklendi.");
+                        console.log("PostgreSQL: importance sütunu başarıyla eklendi.");
                         
                         // Mevcut important değerlerini yeni sütuna taşı
-                        db.run("UPDATE announcements SET importance = CASE WHEN important = 1 THEN 'important' ELSE 'normal' END", [], function(err) {
+                        db.run("UPDATE announcements SET importance = CASE WHEN important = true THEN 'important' ELSE 'normal' END", [], function(err) {
                             if (err) {
-                                console.error("Değerler taşınamadı:", err);
+                                console.error("PostgreSQL değerler taşınamadı:", err);
                             } else {
-                                console.log("Değerler importance sütununa taşındı.");
+                                console.log("PostgreSQL: Değerler importance sütununa taşındı.");
                             }
                         });
                     }
                 });
             }
-        }
-    });
+        });
+    } else {
+        // SQLite için
+        db.all("PRAGMA table_info(announcements)", [], (err, rows) => {
+            if (err) {
+                console.error("SQLite tablo bilgisi alınamadı:", err);
+                return;
+            }
+            
+            // importance sütunu var mı kontrol et
+            let hasImportance = false;
+            if (rows && rows.length > 0) {
+                rows.forEach(row => {
+                    if (row.name === 'importance') {
+                        hasImportance = true;
+                    }
+                });
+                
+                // Eğer importance sütunu yoksa ekle
+                if (!hasImportance) {
+                    console.log("announcements tablosuna importance sütunu ekleniyor (SQLite)...");
+                    db.run("ALTER TABLE announcements ADD COLUMN importance TEXT DEFAULT 'normal'", [], function(err) {
+                        if (err) {
+                            console.error("SQLite sütun eklenemedi:", err);
+                        } else {
+                            console.log("SQLite: importance sütunu başarıyla eklendi.");
+                            
+                            // Mevcut important değerlerini yeni sütuna taşı
+                            db.run("UPDATE announcements SET importance = CASE WHEN important = 1 THEN 'important' ELSE 'normal' END", [], function(err) {
+                                if (err) {
+                                    console.error("SQLite değerler taşınamadı:", err);
+                                } else {
+                                    console.log("SQLite: Değerler importance sütununa taşındı.");
+                                }
+                            });
+                        }
+                    });
+                }
+            }
+        });
+    }
     
     // Varsayılan kullanıcıları kontrol et ve oluştur
     console.log('Varsayılan yönetici kullanıcısı kontrolü yapılıyor...');
@@ -432,105 +473,148 @@ db.serialize(() => {
 });
 
 // Mevcut sınav notları tablosunun yapısını kontrol edelim
-db.all("PRAGMA table_info(grades)", [], (err, rows) => {
-    if (err) {
-        console.error("Tablo bilgisi alınamadı:", err);
-        return;
-    }
+if (isPg) {
+    const query = `
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'grades'
+    `;
     
-    // Eğer eski yapıda ise (dosya desteği olmayan), yeni yapıya geçelim
-    const hasContent = rows.some(row => row.name === 'content');
-    const hasFilePath = rows.some(row => row.name === 'file_path');
-    const hasFileName = rows.some(row => row.name === 'file_name');
-    
-    // Eğer content varsa ve file_path yoksa, yeni yapıya geçelim
-    if (hasContent && !hasFilePath) {
-        console.log("grades tablosu dosya desteği için güncelleniyor...");
+    db.all(query, [], (err, columns) => {
+        if (err) {
+            console.error("PostgreSQL grades tablosu sütun bilgisi alınamadı:", err);
+            return;
+        }
         
-        // Geçici tabloyu oluştur
-        db.serialize(() => {
-            // Önce mevcut verileri yedekleyelim
-            db.run(`CREATE TABLE grades_backup AS SELECT * FROM grades`, [], function(err) {
+        // Sütun isimlerini bir listeye çevir
+        const columnNames = columns.map(col => col.column_name);
+        
+        // Eğer eski yapıda ise (dosya desteği olmayan), yeni yapıya geçelim
+        const hasContent = columnNames.includes('content');
+        const hasFilePath = columnNames.includes('file_path');
+        
+        // Eğer content varsa ve file_path yoksa, yeni yapıya geçelim
+        if (hasContent && !hasFilePath) {
+            console.log("PostgreSQL grades tablosu dosya desteği için güncelleniyor...");
+            
+            // PostgreSQL için yeni dosya sütunları ekle
+            db.run(`ALTER TABLE grades ADD COLUMN file_path TEXT`, [], function(err) {
                 if (err) {
-                    console.error("Yedekleme yapılamadı:", err);
-                    return;
+                    console.error("PostgreSQL file_path sütunu eklenemedi:", err);
+                } else {
+                    db.run(`ALTER TABLE grades ADD COLUMN file_name TEXT`, [], function(err) {
+                        if (err) {
+                            console.error("PostgreSQL file_name sütunu eklenemedi:", err);
+                        } else {
+                            db.run(`ALTER TABLE grades ADD COLUMN file_size INTEGER`, [], function(err) {
+                                if (err) {
+                                    console.error("PostgreSQL file_size sütunu eklenemedi:", err);
+                                } else {
+                                    console.log("PostgreSQL: grades tablosu dosya desteği ile güncellendi.");
+                                }
+                            });
+                        }
+                    });
                 }
-                
-                // Tabloyu sil
-                db.run(`DROP TABLE grades`, [], function(err) {
+            });
+        } else if (hasFilePath) {
+            console.log("PostgreSQL: grades tablosu dosya desteği ile zaten güncel.");
+        }
+    });
+} else {
+    // SQLite için
+    db.all("PRAGMA table_info(grades)", [], (err, rows) => {
+        if (err) {
+            console.error("SQLite grades tablosu bilgisi alınamadı:", err);
+            return;
+        }
+        
+        // Eğer eski yapıda ise (dosya desteği olmayan), yeni yapıya geçelim
+        const hasContent = rows.some(row => row.name === 'content');
+        const hasFilePath = rows.some(row => row.name === 'file_path');
+        const hasFileName = rows.some(row => row.name === 'file_name');
+        
+        // Eğer content varsa ve file_path yoksa, yeni yapıya geçelim
+        if (hasContent && !hasFilePath) {
+            console.log("SQLite grades tablosu dosya desteği için güncelleniyor...");
+            
+            // Geçici tabloyu oluştur
+            db.serialize(() => {
+                // Önce mevcut verileri yedekleyelim
+                db.run(`CREATE TABLE grades_backup AS SELECT * FROM grades`, [], function(err) {
                     if (err) {
-                        console.error("Tablo silinemedi:", err);
+                        console.error("Yedekleme tablosu oluşturma hatası:", err);
                         return;
                     }
                     
-                    // Yeni yapıda tabloyu oluştur
-                    db.run(`
-                        CREATE TABLE grades (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            title TEXT NOT NULL,
-                            lesson TEXT NOT NULL,
-                            type TEXT NOT NULL,
-                            file_path TEXT,
-                            file_name TEXT,
-                            file_size INTEGER,
-                            examDate TEXT NOT NULL,
-                            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-                            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-                        )
-                    `, [], function(err) {
+                    // Sonra mevcut tabloyu silelim
+                    db.run(`DROP TABLE grades`, [], function(err) {
                         if (err) {
-                            console.error("Yeni tablo oluşturulamadı:", err);
-                            
-                            // Hata durumunda yedeği geri yükle
-                            db.run(`CREATE TABLE grades AS SELECT * FROM grades_backup`, [], function(err) {
-                                if (err) {
-                                    console.error("Yedek geri yüklenemedi:", err);
-                                }
-                                db.run(`DROP TABLE grades_backup`);
-                            });
+                            console.error("Tablo silme hatası:", err);
                             return;
                         }
                         
-                        // Başarılı ise eski verileri yeni yapıya taşı (content NULL olarak)
-                        db.all(`SELECT id, title, lesson, type, examDate, createdAt, updatedAt FROM grades_backup`, [], (err, rows) => {
+                        // Yeni şema ile tabloyu yeniden oluşturalım
+                        db.run(`
+                            CREATE TABLE grades (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                title TEXT NOT NULL,
+                                lesson TEXT NOT NULL,
+                                type TEXT NOT NULL,
+                                file_path TEXT,
+                                file_name TEXT,
+                                file_size INTEGER,
+                                examDate TEXT NOT NULL,
+                                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+                            )
+                        `, [], function(err) {
                             if (err) {
-                                console.error("Veri taşıma hatası:", err);
+                                console.error("Yeni tablo oluşturma hatası:", err);
                                 return;
                             }
                             
-                            if (rows.length > 0) {
-                                // Her bir satır için insert yap
-                                const insertStmt = db.prepare(`
-                                    INSERT INTO grades (id, title, lesson, type, file_path, file_name, examDate, createdAt, updatedAt)
-                                    VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)
-                                `);
+                            // Yedekten verileri geri yükleyelim
+                            db.all(`SELECT id, title, lesson, type, examDate, createdAt, updatedAt FROM grades_backup`, [], (err, rows) => {
+                                if (err) {
+                                    console.error("Veri taşıma hatası:", err);
+                                    return;
+                                }
                                 
-                                rows.forEach(row => {
-                                    insertStmt.run(
-                                        row.id, 
-                                        row.title, 
-                                        row.lesson, 
-                                        row.type, 
-                                        row.examDate, 
-                                        row.createdAt, 
-                                        row.updatedAt
-                                    );
-                                });
+                                if (rows.length > 0) {
+                                    // Her bir satır için insert yap
+                                    const insertStmt = db.prepare(`
+                                        INSERT INTO grades (id, title, lesson, type, file_path, file_name, examDate, createdAt, updatedAt)
+                                        VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+                                    `);
+                                    
+                                    rows.forEach(row => {
+                                        insertStmt.run(
+                                            row.id, 
+                                            row.title, 
+                                            row.lesson, 
+                                            row.type, 
+                                            row.examDate, 
+                                            row.createdAt, 
+                                            row.updatedAt
+                                        );
+                                    });
+                                    
+                                    insertStmt.finalize();
+                                }
                                 
-                                insertStmt.finalize();
-                            }
-                            
-                            console.log("Çalışma notları tablosu dosya desteği ile güncellendi.");
-                            db.run(`DROP TABLE grades_backup`);
+                                console.log("SQLite: Çalışma notları tablosu dosya desteği ile güncellendi.");
+                                db.run(`DROP TABLE grades_backup`);
+                            });
                         });
                     });
                 });
             });
-        });
-    } else if (hasFilePath) {
-        console.log("Çalışma notları tablosu dosya desteği ile zaten güncel.");
-    }
-});
+        } else if (hasFilePath) {
+            console.log("SQLite: Çalışma notları tablosu dosya desteği ile zaten güncel.");
+        }
+    });
+}
 
 // SQLite için timestamp fonksiyonu (Türkiye saati - GMT+3)
 function getCurrentTimestamp() {
@@ -2012,106 +2096,197 @@ app.get('/api/update-mek', (req, res) => {
 
 // Debug endpoint - Veritabanı durumunu görüntüle
 app.get('/api/debug/db-status', (req, res) => {
-    console.log('Veritabanı durumu kontrolü...');
+    console.log('Veritabanı durum kontrolü isteği alındı');
     
     try {
         // Tablo listesini al
-        let tablesQuery;
+        let getTablesQuery;
         if (isPg) {
-            tablesQuery = `
+            getTablesQuery = `
                 SELECT table_name 
                 FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                ORDER BY table_name
+                WHERE table_schema = 'public'
+                AND table_type = 'BASE TABLE'
             `;
         } else {
-            tablesQuery = `SELECT name FROM sqlite_master WHERE type='table'`;
+            getTablesQuery = `SELECT name FROM sqlite_master WHERE type='table'`;
         }
         
-        db.all(tablesQuery, [], (err, tables) => {
+        db.all(getTablesQuery, [], async (err, tables) => {
             if (err) {
-                console.error('Tablo listesi alınırken hata:', err);
-                return res.status(500).json({ error: 'Veritabanı hatası', details: err.message });
-            }
-            
-            console.log('Tablolar:', tables);
-            
-            // Her tablonun içeriğini kontrol et
-            const tableData = {};
-            let completedQueries = 0;
-            
-            // Hiç tablo yoksa doğrudan yanıt ver
-            if (!tables || tables.length === 0) {
-                return res.json({ 
-                    success: true,
-                    dbType: isPg ? 'PostgreSQL' : 'SQLite',
-                    tables: [],
-                    message: 'Veritabanında hiç tablo yok!'
+                console.error('Tablo bilgisi alınamadı:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Tablo bilgisi alınamadı', 
+                    details: err.message 
                 });
             }
             
-            tables.forEach(table => {
+            if (!tables || tables.length === 0) {
+                return res.json({
+                    success: true,
+                    dbType: isPg ? 'PostgreSQL' : 'SQLite',
+                    message: 'Veritabanında tablo bulunamadı',
+                    tables: []
+                });
+            }
+            
+            // Tablo bilgilerini oluştur
+            const tableData = [];
+            const tablePromises = [];
+            
+            for (const table of tables) {
                 const tableName = isPg ? table.table_name : table.name;
                 
-                // system tablolarını ve information_schema tablolarını atla
-                if (tableName.startsWith('pg_') || tableName.startsWith('sql') || 
-                    tableName === 'information_schema') {
-                    completedQueries++;
-                    return;
+                // Bazı sistem tablolarını atla
+                if (
+                    tableName === 'sqlite_sequence' || 
+                    tableName.startsWith('sqlite_') || 
+                    tableName.startsWith('pg_') ||
+                    tableName === 'information_schema'
+                ) {
+                    continue;
                 }
                 
-                // Her tablo için kayıt sayısını al
-                let countQuery;
-                if (isPg) {
-                    countQuery = `SELECT COUNT(*) as count FROM "${tableName}"`;
-                } else {
-                    countQuery = `SELECT COUNT(*) as count FROM ${tableName}`;
-                }
-                
-                db.get(countQuery, [], (err, result) => {
-                    if (err) {
-                        console.error(`${tableName} tablosu sayım hatası:`, err);
-                        tableData[tableName] = { error: err.message };
-                    } else {
-                        tableData[tableName] = { count: result.count };
-                        
-                        // İlk 5 kaydı da göster
-                        let recordsQuery;
-                        if (isPg) {
-                            recordsQuery = `SELECT * FROM "${tableName}" LIMIT 5`;
-                        } else {
-                            recordsQuery = `SELECT * FROM ${tableName} LIMIT 5`;
+                const tablePromise = new Promise((resolve) => {
+                    const countQuery = `SELECT COUNT(*) as count FROM ${tableName}`;
+                    
+                    db.get(countQuery, [], (err, countResult) => {
+                        if (err) {
+                            console.error(`${tableName} tablosu sayım hatası:`, err);
+                            resolve({
+                                name: tableName,
+                                count: 'Hata',
+                                error: err.message,
+                                records: []
+                            });
+                            return;
                         }
+                        
+                        const count = countResult ? countResult.count : 0;
+                        
+                        // İlk 5 kaydı al
+                        const recordsQuery = `SELECT * FROM ${tableName} LIMIT 5`;
                         
                         db.all(recordsQuery, [], (err, records) => {
                             if (err) {
-                                console.error(`${tableName} kayıtları alınırken hata:`, err);
-                            } else {
-                                tableData[tableName].records = records;
+                                console.error(`${tableName} tablosu kayıt hatası:`, err);
+                                resolve({
+                                    name: tableName,
+                                    count,
+                                    error: err.message,
+                                    records: []
+                                });
+                                return;
                             }
                             
-                            completedQueries++;
-                            
-                            // Tüm sorgular tamamlandığında yanıt ver
-                            if (completedQueries === tables.length) {
-                                return res.json({
-                                    success: true,
-                                    dbType: isPg ? 'PostgreSQL' : 'SQLite',
-                                    tables: tables.map(t => isPg ? t.table_name : t.name),
-                                    tableData: tableData
+                            // Tablo içeriği bilgilerini döndür
+                            let tableInfo;
+                            if (isPg) {
+                                const columnsQuery = `
+                                    SELECT column_name, data_type 
+                                    FROM information_schema.columns 
+                                    WHERE table_name = '${tableName}'
+                                `;
+                                
+                                db.all(columnsQuery, [], (err, columns) => {
+                                    if (err) {
+                                        console.error(`${tableName} tablosu sütun bilgisi hatası:`, err);
+                                        resolve({
+                                            name: tableName,
+                                            count,
+                                            columns: 'Hata',
+                                            records
+                                        });
+                                        return;
+                                    }
+                                    
+                                    resolve({
+                                        name: tableName,
+                                        count,
+                                        columns: columns.map(col => `${col.column_name} (${col.data_type})`),
+                                        records
+                                    });
+                                });
+                            } else {
+                                db.all(`PRAGMA table_info(${tableName})`, [], (err, columns) => {
+                                    if (err) {
+                                        console.error(`${tableName} tablosu sütun bilgisi hatası:`, err);
+                                        resolve({
+                                            name: tableName,
+                                            count,
+                                            columns: 'Hata',
+                                            records
+                                        });
+                                        return;
+                                    }
+                                    
+                                    resolve({
+                                        name: tableName,
+                                        count,
+                                        columns: columns.map(col => `${col.name} (${col.type})`),
+                                        records
+                                    });
                                 });
                             }
                         });
-                    }
+                    });
                 });
-            });
+                
+                tablePromises.push(tablePromise);
+            }
+            
+            // Tüm tablo bilgilerini topla
+            Promise.all(tablePromises)
+                .then((tablesInfo) => {
+                    // Kullanıcı tiplerine göre bir özet ekle
+                    let userTypesSummary = [];
+                    
+                    if (tablesInfo.some(table => table.name === 'users')) {
+                        db.all(`SELECT userType, COUNT(*) as count FROM users GROUP BY userType`, [], (err, types) => {
+                            if (err) {
+                                console.error('Kullanıcı tipleri alınamadı:', err);
+                                userTypesSummary = ['Hata: ' + err.message];
+                            } else {
+                                userTypesSummary = types.map(type => `${type.userType}: ${type.count}`);
+                                console.log('Mevcut kullanıcı tipleri:', userTypesSummary);
+                            }
+                            
+                            // Tüm veritabanı durum bilgisini döndür
+                            res.json({
+                                success: true,
+                                dbType: isPg ? 'PostgreSQL' : 'SQLite',
+                                tables: tablesInfo,
+                                userTypes: userTypesSummary,
+                                timestamp: new Date().toISOString()
+                            });
+                        });
+                    } else {
+                        // Kullanıcı tablosu yoksa direkt döndür
+                        res.json({
+                            success: true,
+                            dbType: isPg ? 'PostgreSQL' : 'SQLite', 
+                            tables: tablesInfo,
+                            userTypes: [],
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Veritabanı durum bilgisi oluşturulurken hata:', error);
+                    res.status(500).json({
+                        success: false,
+                        error: 'Veritabanı durum bilgisi oluşturulurken hata',
+                        details: error.message
+                    });
+                });
         });
     } catch (error) {
-        console.error('Veritabanı durumu kontrolü hatası:', error);
-        return res.status(500).json({ 
-            error: 'Sunucu hatası', 
-            details: error.message,
-            stack: error.stack
+        console.error('Veritabanı durum bilgisi alınamadı:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Veritabanı durum bilgisi alınamadı',
+            details: error.message
         });
     }
 });
