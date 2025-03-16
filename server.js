@@ -183,6 +183,32 @@ db.serialize(() => {
             }
         }
     });
+    
+    // Varsayılan kullanıcıları kontrol et ve oluştur
+    db.get("SELECT COUNT(*) as count FROM users WHERE username = 'MEK' AND userType = 'Yönetici'", [], (err, row) => {
+        if (err) {
+            console.error('Kullanıcı kontrolü yaparken hata:', err.message);
+            return;
+        }
+        
+        // MEK kullanıcısı yoksa oluştur
+        if (row.count === 0) {
+            // Base64 ile şifreleme (123456 şifresini Base64'e çeviriyoruz)
+            const password = Buffer.from('123456').toString('base64');
+            
+            db.run(
+                `INSERT INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                ['MEK Admin', 'MEK', password, 'Yönetici'],
+                function(err) {
+                    if (err) {
+                        console.error('Varsayılan yönetici oluştururken hata:', err.message);
+                    } else {
+                        console.log('Varsayılan yönetici oluşturuldu: MEK');
+                    }
+                }
+            );
+        }
+    });
 });
 
 // Mevcut sınav notları tablosunun yapısını kontrol edelim
@@ -1399,7 +1425,7 @@ app.post('/api/users', (req, res) => {
         }
         
         if (row) {
-            return res.status(400).json({ success: false, message: 'Bu kullanıcı adı zaten kullanılıyor' });
+            return res.status(400).json({ success: false, message: 'Bu kullanıcı adı başka bir kullanıcı tarafından kullanılıyor' });
         }
         
         // Şifreleme yapalım
