@@ -1185,7 +1185,7 @@ app.put('/api/homework/update/:id', (req, res) => {
         if (isPg) {
             query = `
                 UPDATE homework 
-                SET title = $1, lesson = $2, dueDate = $3, description = $4, updatedAt = $5
+                SET title = $1, lesson = $2, "dueDate" = $3, description = $4, "updatedAt" = $5
                 WHERE id = $6
                 RETURNING id
             `;
@@ -2132,6 +2132,116 @@ app.delete('/api/announcements/delete/:id', (req, res) => {
         });
     } catch (error) {
         console.error('Duyuru silme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// Sınav notları için API endpoint'leri
+// 1. Tüm sınav notlarını getir
+app.get('/api/grades/get', (req, res) => {
+    console.log('Sınav notları getirme isteği alındı');
+    
+    let query;
+    
+    if (isPg) {
+        query = `SELECT * FROM grades ORDER BY "examDate" DESC`;
+    } else {
+        query = `SELECT * FROM grades ORDER BY examDate DESC`;
+    }
+    
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            console.error(`Sınav notları çekilirken hata (${getTurkishTimeString()}):`, err);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Veritabanı hatası' 
+            });
+        }
+        
+        console.log(`${rows?.length || 0} adet sınav notu bulundu. Zaman: ${getTurkishTimeString()}`);
+        res.json({
+            success: true,
+            data: rows
+        });
+    });
+});
+
+// 2. Yeni sınav notu ekle
+app.post('/api/grades/add', (req, res) => {
+    console.log('Yeni sınav notu ekleme isteği alındı:', req.body);
+    
+    const { title, lesson, type, examDate, userType } = req.body;
+    const file = req.file; // Eğer dosya yüklendiyse
+    
+    // Yönetici kontrolü - hem body hem query parametrelerinden kontrol et
+    const userTypeValue = userType || req.query.userType;
+    console.log('Gönderilen userType:', userTypeValue);
+    
+    if (userTypeValue !== 'admin' && userTypeValue !== 'Yönetici') {
+        console.error('Yetkisiz sınav notu ekleme girişimi:', userTypeValue);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    // Gerekli alanların kontrolü
+    if (!title || !lesson || !type || !examDate) {
+        console.error('Eksik bilgi ile sınav notu ekleme girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Başlık, ders, tür ve sınav tarihi gereklidir' 
+        });
+    }
+    
+    try {
+        const now = new Date().toISOString();
+        
+        // Dosya bilgileri
+        const filePath = file ? file.path : null;
+        const fileName = file ? file.originalname : null;
+        const fileSize = file ? file.size : null;
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                INSERT INTO grades (title, lesson, type, "examDate", file_path, file_name, file_size, "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING id
+            `;
+            params = [title, lesson, type, examDate, filePath, fileName, fileSize, now, now];
+        } else {
+            query = `
+                INSERT INTO grades (title, lesson, type, examDate, file_path, file_name, file_size, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `;
+            params = [title, lesson, type, examDate, filePath, fileName, fileSize];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Sınav notu eklenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            console.log(`Yeni sınav notu eklendi: ${title} - ID: ${this.lastID}`);
+            res.json({ 
+                success: true, 
+                message: 'Sınav notu başarıyla eklendi', 
+                id: this.lastID 
+            });
+        });
+    } catch (error) {
+        console.error('Sınav notu ekleme hatası:', error);
         res.status(500).json({ 
             success: false, 
             message: 'Sunucu hatası', 
