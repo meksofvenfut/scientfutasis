@@ -202,8 +202,8 @@ db.serialize(() => {
                 name TEXT NOT NULL,
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
-                userType TEXT NOT NULL,
-                lastLogin TEXT
+                "usertype" TEXT NOT NULL,
+                "lastlogin" TEXT
             )
         `;
         
@@ -417,11 +417,11 @@ db.serialize(() => {
     console.log('Varsayılan yönetici kullanıcısı kontrolü yapılıyor...');
     
     // Önce userType'ları kontrol edelim
-    db.all("SELECT DISTINCT userType FROM users", [], (err, rows) => {
+    db.all("SELECT DISTINCT usertype FROM users", [], (err, rows) => {
         if (err) {
             console.error('Kullanıcı tipleri kontrolü yaparken hata:', err.message);
         } else {
-            console.log('Mevcut kullanıcı tipleri:', rows && rows.length ? rows.map(r => r.userType).join(', ') : 'Yok');
+            console.log('Mevcut kullanıcı tipleri:', rows && rows.length ? rows.map(r => r.usertype).join(', ') : 'Yok');
         }
     });
     
@@ -446,12 +446,12 @@ db.serialize(() => {
             if (isPg) {
                 // PostgreSQL için
                 const insertYoneticiSQL = `
-                    INSERT INTO users (name, username, password, userType)
+                    INSERT INTO users (name, username, password, "usertype")
                     VALUES ($1, $2, $3, $4)
                     ON CONFLICT (username) DO NOTHING
                 `;
                 
-                db.run(insertYoneticiSQL, ['MEK Admin', 'MEK', password, 'Yönetici'], function(err) {
+                db.run(insertYoneticiSQL, ['MEK Admin', 'MEK', password, 'admin'], function(err) {
                     if (err) {
                         console.error('Varsayılan Yönetici kullanıcısı oluştururken hata:', err.message);
                     } else {
@@ -460,7 +460,7 @@ db.serialize(() => {
                 });
                 
                 const insertAdminSQL = `
-                    INSERT INTO users (name, username, password, userType)
+                    INSERT INTO users (name, username, password, "usertype")
                     VALUES ($1, $2, $3, $4)
                     ON CONFLICT (username) DO NOTHING
                 `;
@@ -691,7 +691,7 @@ app.post('/api/login', (req, res) => {
         
         // Kullanıcıyı veritabanında kontrol et
         const query = isPg ? 
-            `SELECT id, name, username, "userType" FROM users WHERE username = $1 AND password = $2` :
+            `SELECT id, name, username, "usertype" FROM users WHERE username = $1 AND password = $2` :
             `SELECT id, name, username, userType FROM users WHERE username = ? AND password = ?`;
         
         const params = isPg ? [username, encodedPassword] : [username, encodedPassword];
@@ -713,10 +713,8 @@ app.post('/api/login', (req, res) => {
             console.log('Kullanıcı bulundu:', row);
             
             // Kullanıcı türünü kontrol et - PostgreSQL büyük/küçük harf duyarlılığı
-            let userTypeValue = row.userType || '';
-            
-            // PostgreSQL'de sütun adları küçük harfle döner
-            if (row.usertype) userTypeValue = row.usertype;
+            // PostgreSQL'de artık direkt usertype gelecek
+            let userTypeValue = row.usertype || '';
             
             console.log('Orijinal userType değeri:', userTypeValue);
             userTypeValue = userTypeValue.toLowerCase();
@@ -749,7 +747,7 @@ app.post('/api/login', (req, res) => {
             
             // Kullanıcı login zamanını güncelle
             const loginTimeUpdateQuery = isPg ? 
-                `UPDATE users SET "lastLogin" = $1 WHERE id = $2` :
+                `UPDATE users SET "lastlogin" = $1 WHERE id = $2` :
                 `UPDATE users SET lastLogin = ? WHERE id = ?`;
             
             const loginTimeParams = isPg ? [new Date().toISOString(), row.id] : [new Date().toISOString(), row.id];
@@ -1511,9 +1509,9 @@ app.get('/api/init-data', (req, res) => {
         // PostgreSQL için kullanıcı ekle
         if (isPg) {
             const insertAdmin = `
-                INSERT INTO users (name, username, password, userType)
+                INSERT INTO users (name, username, password, "usertype")
                 VALUES ($1, $2, $3, $4)
-                ON CONFLICT (username) DO UPDATE SET userType = $4
+                ON CONFLICT (username) DO UPDATE SET "usertype" = $4
             `;
             db.run(insertAdmin, ['MEK Admin', 'MEK', password, 'admin'], err => {
                 if (err) console.error('Kullanıcı eklenirken hata:', err.message);
@@ -1546,18 +1544,18 @@ app.get('/api/init-data', (req, res) => {
         }
         
         // Admin kullanıcıları ekledikten sonra, mevcut kullanıcıların userType'larını kontrol et
-        db.all("SELECT id, username, userType FROM users", [], (err, rows) => {
+        db.all("SELECT id, username, usertype FROM users", [], (err, rows) => {
             if (err) {
                 console.error('Kullanıcı tipleri kontrolü hatası:', err.message);
             } else {
                 console.log('Mevcut kullanıcılar ve tipleri:');
                 rows.forEach(user => {
-                    console.log(`- ${user.username}: ${user.userType}`);
+                    console.log(`- ${user.username}: ${user.usertype}`);
                     
                     // Yönetici tipindeki kullanıcıları admin olarak güncelle
-                    if (user.userType === 'Yönetici') {
+                    if (user.usertype === 'Yönetici') {
                         const updateQuery = isPg ? 
-                            `UPDATE users SET userType = $1 WHERE id = $2` :
+                            `UPDATE users SET "usertype" = $1 WHERE id = $2` :
                             `UPDATE users SET userType = ? WHERE id = ?`;
                             
                         const updateParams = isPg ? ['admin', user.id] : ['admin', user.id];
@@ -2092,7 +2090,7 @@ app.post('/api/users/update', (req, res) => {
         let query, params;
         
         if (isPg) {
-            query = `UPDATE users SET userType = $1 WHERE username = $2 RETURNING id, username, userType`;
+            query = `UPDATE users SET "usertype" = $1 WHERE username = $2 RETURNING id, username, "usertype"`;
             params = [userType, username];
         } else {
             query = `UPDATE users SET userType = ? WHERE username = ?`;
