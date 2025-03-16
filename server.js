@@ -180,7 +180,8 @@ db.serialize(() => {
                 colIndex INTEGER,
                 content TEXT,
                 createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (userId, rowIndex, colIndex)
             )
         `;
         
@@ -706,48 +707,65 @@ app.get('/api/users/list', (req, res) => {
 // Ders programı için API endpoint'leri
 // 1. Ders programını getir
 app.get('/api/schedule/get', (req, res) => {
-    // Global program için sabit userId kullan
-    const userId = 0;
-    
-    // İsteğin zaman damgasını konsola logla
-    console.log(`Ders programı çekiliyor (Global program) - Zaman: ${getTurkishTimeString()}`);
-    console.log(`İstek parametreleri:`, req.query);
-    
-    const query = `SELECT rowIndex, colIndex, content FROM schedule WHERE userId = ?`;
-    db.all(query, [userId], (err, rows) => {
-        if (err) {
-            console.error('Ders programı verileri çekilirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
+    try {
+        console.log('Ders programı getirme isteği alındı');
+        // Varsayılan olarak kullanıcı 1 (genel program)
+        const userId = req.query.userId || 1;
+        
+        // API isteğini loglama
+        console.log(`Ders programı getiriliyor - Kullanıcı ID: ${userId}`);
+        
+        // Sorguyu hazırla
+        let query, params;
+        
+        if (isPg) {
+            query = `SELECT rowIndex, colIndex, content FROM schedule WHERE userId = $1`;
+            params = [userId];
+        } else {
+            query = `SELECT rowIndex, colIndex, content FROM schedule WHERE userId = ?`;
+            params = [userId];
         }
         
-        // Hata ayıklama için kayıt sayısını ve içeriğini yazdır
-        console.log(`Bulunan kayıt sayısı: ${rows.length}`);
-        if (rows.length > 0) {
-            console.log('İlk kayıt örneği:', rows[0]);
-        }
+        console.log('Sorgu çalıştırılıyor:', query, 'Parametreler:', params);
         
-        // Verileri client tarafının beklediği formata dönüştür
-        const scheduleData = {};
-        rows.forEach(row => {
-            if (!scheduleData[row.rowIndex]) {
-                scheduleData[row.rowIndex] = {};
+        // Sorguyu çalıştır
+        db.all(query, params, (err, rows) => {
+            if (err) {
+                console.error('Ders programı verileri alınırken hata:', err);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Veritabanı hatası'
+                });
             }
-            scheduleData[row.rowIndex][row.colIndex] = row.content;
+            
+            console.log(`${rows?.length || 0} adet kayıt bulundu`);
+            
+            // Veriyi formatla
+            const scheduleData = {};
+            
+            if (rows && rows.length > 0) {
+                rows.forEach(row => {
+                    if (!scheduleData[row.rowIndex]) {
+                        scheduleData[row.rowIndex] = {};
+                    }
+                    scheduleData[row.rowIndex][row.colIndex] = row.content;
+                });
+            }
+            
+            // Başarılı yanıt
+            return res.json({
+                success: true,
+                schedule: scheduleData,
+                timestamp: new Date().toISOString()
+            });
         });
-        
-        // İsteğe yanıt meta verilerini ekle - önbellek sorunlarını tespit için
-        const responseData = {
-            schedule: scheduleData,
-            meta: {
-                timestamp: new Date().toISOString(),
-                recordCount: rows.length,
-                requestId: Math.random().toString(36).substring(2, 10) // Rastgele ID
-            }
-        };
-        
-        console.log(`${rows.length} adet ders programı kaydı bulundu. Yanıt gönderiliyor...`);
-        res.json(responseData);
-    });
+    } catch (error) {
+        console.error('Ders programı getirme istisna hatası:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Sunucu hatası'
+        });
+    }
 });
 
 // 2. Ders programını kaydet
@@ -1514,7 +1532,8 @@ function addScheduleExamples() {
             const query = `
                 INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
                 VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (userId, rowIndex, colIndex) DO NOTHING
+                ON CONFLICT (userId, rowIndex, colIndex) 
+                DO UPDATE SET content = $4, updatedAt = $6
             `;
             const params = [data.userId, data.rowIndex, data.colIndex, data.content, now, now];
             
@@ -1975,3 +1994,109 @@ app.get('/api/update-mek', (req, res) => {
         });
     });
 }); 
+
+// Debug endpoint - Veritabanı durumunu görüntüle
+app.get('/api/debug/db-status', (req, res) => {
+    console.log('Veritabanı durumu kontrolü...');
+    
+    try {
+        // Tablo listesini al
+        let tablesQuery;
+        if (isPg) {
+            tablesQuery = `
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                ORDER BY table_name
+            `;
+        } else {
+            tablesQuery = `SELECT name FROM sqlite_master WHERE type='table'`;
+        }
+        
+        db.all(tablesQuery, [], (err, tables) => {
+            if (err) {
+                console.error('Tablo listesi alınırken hata:', err);
+                return res.status(500).json({ error: 'Veritabanı hatası', details: err.message });
+            }
+            
+            console.log('Tablolar:', tables);
+            
+            // Her tablonun içeriğini kontrol et
+            const tableData = {};
+            let completedQueries = 0;
+            
+            // Hiç tablo yoksa doğrudan yanıt ver
+            if (!tables || tables.length === 0) {
+                return res.json({ 
+                    success: true,
+                    dbType: isPg ? 'PostgreSQL' : 'SQLite',
+                    tables: [],
+                    message: 'Veritabanında hiç tablo yok!'
+                });
+            }
+            
+            tables.forEach(table => {
+                const tableName = isPg ? table.table_name : table.name;
+                
+                // system tablolarını ve information_schema tablolarını atla
+                if (tableName.startsWith('pg_') || tableName.startsWith('sql') || 
+                    tableName === 'information_schema') {
+                    completedQueries++;
+                    return;
+                }
+                
+                // Her tablo için kayıt sayısını al
+                let countQuery;
+                if (isPg) {
+                    countQuery = `SELECT COUNT(*) as count FROM "${tableName}"`;
+                } else {
+                    countQuery = `SELECT COUNT(*) as count FROM ${tableName}`;
+                }
+                
+                db.get(countQuery, [], (err, result) => {
+                    if (err) {
+                        console.error(`${tableName} tablosu sayım hatası:`, err);
+                        tableData[tableName] = { error: err.message };
+                    } else {
+                        tableData[tableName] = { count: result.count };
+                        
+                        // İlk 5 kaydı da göster
+                        let recordsQuery;
+                        if (isPg) {
+                            recordsQuery = `SELECT * FROM "${tableName}" LIMIT 5`;
+                        } else {
+                            recordsQuery = `SELECT * FROM ${tableName} LIMIT 5`;
+                        }
+                        
+                        db.all(recordsQuery, [], (err, records) => {
+                            if (err) {
+                                console.error(`${tableName} kayıtları alınırken hata:`, err);
+                            } else {
+                                tableData[tableName].records = records;
+                            }
+                            
+                            completedQueries++;
+                            
+                            // Tüm sorgular tamamlandığında yanıt ver
+                            if (completedQueries === tables.length) {
+                                return res.json({
+                                    success: true,
+                                    dbType: isPg ? 'PostgreSQL' : 'SQLite',
+                                    tables: tables.map(t => isPg ? t.table_name : t.name),
+                                    tableData: tableData
+                                });
+                            }
+                        });
+                    }
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Veritabanı durumu kontrolü hatası:', error);
+        return res.status(500).json({ 
+            error: 'Sunucu hatası', 
+            details: error.message,
+            stack: error.stack
+        });
+    }
+});
