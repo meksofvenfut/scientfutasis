@@ -2652,30 +2652,54 @@ app.get('/api/grades/download/:id', (req, res) => {
             
             // Dosyanın varlığını kontrol et
             if (!fs.existsSync(filePath)) {
-                console.error(`Dosya fiziksel olarak bulunamadı: ${filePath}`);
-                return res.status(404).json({ 
-                    success: false, 
-                    message: 'Dosya fiziksel olarak bulunamadı' 
-                });
-            }
-            
-            // Dosyayı gönder
-            res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-            res.setHeader('Content-Type', 'application/octet-stream');
-            
-            const fileStream = fs.createReadStream(filePath);
-            fileStream.pipe(res);
-            
-            fileStream.on('error', (error) => {
-                console.error('Dosya okuma hatası:', error);
-                if (!res.headersSent) {
-                    res.status(500).json({ 
+                // Uploads klasörü içinde deneyelim
+                const uploadsPath = path.join(__dirname, 'uploads', path.basename(filePath));
+                console.log(`Dosya ana dizinde bulunamadı, uploads klasöründe deneniyor: ${uploadsPath}`);
+                
+                if (fs.existsSync(uploadsPath)) {
+                    // Dosyayı gönder
+                    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+                    res.setHeader('Content-Type', 'application/octet-stream');
+                    
+                    const fileStream = fs.createReadStream(uploadsPath);
+                    fileStream.pipe(res);
+                    
+                    fileStream.on('error', (error) => {
+                        console.error('Dosya okuma hatası:', error);
+                        if (!res.headersSent) {
+                            res.status(500).json({ 
+                                success: false, 
+                                message: 'Dosya okuma hatası', 
+                                error: error.message 
+                            });
+                        }
+                    });
+                } else {
+                    console.error(`Dosya fiziksel olarak bulunamadı: ${filePath} veya ${uploadsPath}`);
+                    return res.status(404).json({ 
                         success: false, 
-                        message: 'Dosya okuma hatası', 
-                        error: error.message 
+                        message: 'Dosya fiziksel olarak bulunamadı' 
                     });
                 }
-            });
+            } else {
+                // Dosyayı gönder
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+                res.setHeader('Content-Type', 'application/octet-stream');
+                
+                const fileStream = fs.createReadStream(filePath);
+                fileStream.pipe(res);
+                
+                fileStream.on('error', (error) => {
+                    console.error('Dosya okuma hatası:', error);
+                    if (!res.headersSent) {
+                        res.status(500).json({ 
+                            success: false, 
+                            message: 'Dosya okuma hatası', 
+                            error: error.message 
+                        });
+                    }
+                });
+            }
         });
     } catch (error) {
         console.error('Dosya indirme hatası:', error);
