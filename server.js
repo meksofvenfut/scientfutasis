@@ -181,13 +181,13 @@ db.serialize(() => {
         scheduleTableSQL = `
             CREATE TABLE IF NOT EXISTS schedule (
                 id SERIAL PRIMARY KEY,
-                userId INTEGER,
-                rowIndex INTEGER,
-                colIndex INTEGER,
+                "userId" INTEGER,
+                "rowIndex" INTEGER,
+                "colIndex" INTEGER,
                 content TEXT,
-                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE (userId, rowIndex, colIndex)
+                "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE ("userId", "rowIndex", "colIndex")
             )
         `;
         
@@ -199,8 +199,9 @@ db.serialize(() => {
                 dueDate TEXT,
                 description TEXT,
                 isCompleted BOOLEAN DEFAULT FALSE,
-                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (title, lesson)
             )
         `;
         
@@ -1266,11 +1267,13 @@ app.get('/api/init', (req, res) => {
         db.run(`CREATE TABLE IF NOT EXISTS homework (
             id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
             title TEXT,
+            lesson TEXT,
+            dueDate TEXT,
             description TEXT,
-            dueDate TIMESTAMP,
-            lessonId INTEGER,
+            isCompleted BOOLEAN DEFAULT FALSE,
             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (title, lesson)
         )`, [], err => {
             if (err) {
                 console.error('Homework tablosu oluşturulurken hata:', err.message);
@@ -1284,8 +1287,10 @@ app.get('/api/init', (req, res) => {
             id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
             title TEXT,
             content TEXT,
+            importance TEXT DEFAULT 'normal',
             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(title)
         )`, [], err => {
             if (err) {
                 console.error('Announcements tablosu oluşturulurken hata:', err.message);
@@ -1297,24 +1302,28 @@ app.get('/api/init', (req, res) => {
         // Notlar tablosu
         db.run(`CREATE TABLE IF NOT EXISTS grades (
             id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
-            studentId INTEGER,
-            lessonId INTEGER,
-            grade INTEGER,
-            examType TEXT,
+            title TEXT NOT NULL,
+            lesson TEXT NOT NULL,
+            type TEXT NOT NULL,
+            file_path TEXT,
+            file_name TEXT,
+            file_size INTEGER,
+            examDate TEXT NOT NULL, 
             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(title, lesson)
         )`, [], err => {
             if (err) {
                 console.error('Grades tablosu oluşturulurken hata:', err.message);
             } else {
                 console.log('Grades tablosu oluşturuldu veya zaten var');
-                
-                // Yanıt döndür
-                res.json({
-                    success: true,
-                    message: 'Veritabanı tabloları oluşturuldu',
-                });
             }
+        });
+        
+        // Yanıt döndür
+        res.json({
+            success: true,
+            message: 'Veritabanı tabloları oluşturuldu',
         });
     } catch (error) {
         console.error('Veritabanı tabloları oluşturulurken hata:', error);
