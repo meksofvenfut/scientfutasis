@@ -1228,103 +1228,209 @@ app.get('/api/init', (req, res) => {
     console.log('Veritabanı tabloları oluşturma isteği alındı');
     
     try {
-        // Kullanıcılar tablosu
-        db.run(`CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
-            name TEXT,
-            username TEXT UNIQUE,
-            password TEXT,
-            userType TEXT DEFAULT 'student',
-            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )`, [], err => {
-            if (err) {
-                console.error('Users tablosu oluşturulurken hata:', err.message);
-            } else {
-                console.log('Users tablosu oluşturuldu veya zaten var');
-            }
-        });
-        
-        // Ders programı tablosu
-        db.run(`CREATE TABLE IF NOT EXISTS schedule (
-            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
-            userId INTEGER,
-            rowIndex INTEGER,
-            colIndex INTEGER,
-            content TEXT,
-            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (userId, rowIndex, colIndex)
-        )`, [], err => {
-            if (err) {
-                console.error('Schedule tablosu oluşturulurken hata:', err.message);
-            } else {
-                console.log('Schedule tablosu oluşturuldu veya zaten var');
-            }
-        });
-        
-        // Ödevler tablosu
-        db.run(`CREATE TABLE IF NOT EXISTS homework (
-            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
-            title TEXT,
-            lesson TEXT,
-            dueDate TEXT,
-            description TEXT,
-            isCompleted BOOLEAN DEFAULT FALSE,
-            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (title, lesson)
-        )`, [], err => {
-            if (err) {
-                console.error('Homework tablosu oluşturulurken hata:', err.message);
-            } else {
-                console.log('Homework tablosu oluşturuldu veya zaten var');
-            }
-        });
-        
-        // Duyurular tablosu
-        db.run(`CREATE TABLE IF NOT EXISTS announcements (
-            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
-            title TEXT,
-            content TEXT,
-            importance TEXT DEFAULT 'normal',
-            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(title)
-        )`, [], err => {
-            if (err) {
-                console.error('Announcements tablosu oluşturulurken hata:', err.message);
-            } else {
-                console.log('Announcements tablosu oluşturuldu veya zaten var');
-            }
-        });
-        
-        // Notlar tablosu
-        db.run(`CREATE TABLE IF NOT EXISTS grades (
-            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
-            title TEXT NOT NULL,
-            lesson TEXT NOT NULL,
-            type TEXT NOT NULL,
-            file_path TEXT,
-            file_name TEXT,
-            file_size INTEGER,
-            examDate TEXT NOT NULL, 
-            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(title, lesson)
-        )`, [], err => {
-            if (err) {
-                console.error('Grades tablosu oluşturulurken hata:', err.message);
-            } else {
-                console.log('Grades tablosu oluşturuldu veya zaten var');
-            }
-        });
-        
-        // Yanıt döndür
-        res.json({
-            success: true,
-            message: 'Veritabanı tabloları oluşturuldu',
-        });
+        // PostgreSQL için tabloları önce DROP edip sonra yeniden oluştur
+        if (isPg) {
+            console.log('PostgreSQL tabloları sıfırlanıyor...');
+            
+            // Önce her tabloyu DROP et
+            db.run(`DROP TABLE IF EXISTS schedule`, [], err => {
+                if (err) console.error('Schedule tablosu silinemedi:', err.message);
+                else console.log('Schedule tablosu silindi');
+                
+                // Sonra yeniden oluştur
+                db.run(`
+                    CREATE TABLE IF NOT EXISTS schedule (
+                        id SERIAL PRIMARY KEY,
+                        "userId" INTEGER,
+                        "rowIndex" INTEGER,
+                        "colIndex" INTEGER,
+                        content TEXT,
+                        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE ("userId", "rowIndex", "colIndex")
+                    )
+                `, [], err => {
+                    if (err) console.error('Schedule tablosu oluşturulamadı:', err.message);
+                    else console.log('Schedule tablosu yeniden oluşturuldu');
+                });
+            });
+            
+            // Homework tablosu
+            db.run(`DROP TABLE IF EXISTS homework`, [], err => {
+                if (err) console.error('Homework tablosu silinemedi:', err.message);
+                else console.log('Homework tablosu silindi');
+                
+                // Sonra yeniden oluştur
+                db.run(`
+                    CREATE TABLE IF NOT EXISTS homework (
+                        id SERIAL PRIMARY KEY,
+                        title TEXT,
+                        lesson TEXT,
+                        "dueDate" TEXT,
+                        description TEXT,
+                        "isCompleted" BOOLEAN DEFAULT FALSE,
+                        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (title, lesson)
+                    )
+                `, [], err => {
+                    if (err) console.error('Homework tablosu oluşturulamadı:', err.message);
+                    else console.log('Homework tablosu yeniden oluşturuldu');
+                });
+            });
+            
+            // Announcements tablosu
+            db.run(`DROP TABLE IF EXISTS announcements`, [], err => {
+                if (err) console.error('Announcements tablosu silinemedi:', err.message);
+                else console.log('Announcements tablosu silindi');
+                
+                // Sonra yeniden oluştur
+                db.run(`
+                    CREATE TABLE IF NOT EXISTS announcements (
+                        id SERIAL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        importance TEXT DEFAULT 'normal',
+                        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (title)
+                    )
+                `, [], err => {
+                    if (err) console.error('Announcements tablosu oluşturulamadı:', err.message);
+                    else console.log('Announcements tablosu yeniden oluşturuldu');
+                });
+            });
+            
+            // Grades tablosu
+            db.run(`DROP TABLE IF EXISTS grades`, [], err => {
+                if (err) console.error('Grades tablosu silinemedi:', err.message);
+                else console.log('Grades tablosu silindi');
+                
+                // Sonra yeniden oluştur
+                db.run(`
+                    CREATE TABLE IF NOT EXISTS grades (
+                        id SERIAL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        lesson TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        file_path TEXT,
+                        file_name TEXT,
+                        file_size INTEGER,
+                        "examDate" TEXT NOT NULL,
+                        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE (title, lesson)
+                    )
+                `, [], err => {
+                    if (err) console.error('Grades tablosu oluşturulamadı:', err.message);
+                    else console.log('Grades tablosu yeniden oluşturuldu');
+                });
+            });
+            
+            res.json({
+                success: true,
+                message: 'PostgreSQL tabloları sıfırlanıp yeniden oluşturuldu'
+            });
+        } else {
+            // SQLite için normal oluşturma işlemi
+            // Kullanıcılar tablosu
+            db.run(`CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+                name TEXT,
+                username TEXT UNIQUE,
+                password TEXT,
+                userType TEXT DEFAULT 'student',
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`, [], err => {
+                if (err) {
+                    console.error('Users tablosu oluşturulurken hata:', err.message);
+                } else {
+                    console.log('Users tablosu oluşturuldu veya zaten var');
+                }
+            });
+            
+            // Ders programı tablosu
+            db.run(`CREATE TABLE IF NOT EXISTS schedule (
+                id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+                userId INTEGER,
+                rowIndex INTEGER,
+                colIndex INTEGER,
+                content TEXT,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (userId, rowIndex, colIndex)
+            )`, [], err => {
+                if (err) {
+                    console.error('Schedule tablosu oluşturulurken hata:', err.message);
+                } else {
+                    console.log('Schedule tablosu oluşturuldu veya zaten var');
+                }
+            });
+            
+            // Ödevler tablosu
+            db.run(`CREATE TABLE IF NOT EXISTS homework (
+                id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+                title TEXT,
+                lesson TEXT,
+                dueDate TEXT,
+                description TEXT,
+                isCompleted BOOLEAN DEFAULT FALSE,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (title, lesson)
+            )`, [], err => {
+                if (err) {
+                    console.error('Homework tablosu oluşturulurken hata:', err.message);
+                } else {
+                    console.log('Homework tablosu oluşturuldu veya zaten var');
+                }
+            });
+            
+            // Duyurular tablosu
+            db.run(`CREATE TABLE IF NOT EXISTS announcements (
+                id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+                title TEXT,
+                content TEXT,
+                importance TEXT DEFAULT 'normal',
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(title)
+            )`, [], err => {
+                if (err) {
+                    console.error('Announcements tablosu oluşturulurken hata:', err.message);
+                } else {
+                    console.log('Announcements tablosu oluşturuldu veya zaten var');
+                }
+            });
+            
+            // Notlar tablosu
+            db.run(`CREATE TABLE IF NOT EXISTS grades (
+                id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+                title TEXT NOT NULL,
+                lesson TEXT NOT NULL,
+                type TEXT NOT NULL,
+                file_path TEXT,
+                file_name TEXT,
+                file_size INTEGER,
+                examDate TEXT NOT NULL, 
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(title, lesson)
+            )`, [], err => {
+                if (err) {
+                    console.error('Grades tablosu oluşturulurken hata:', err.message);
+                } else {
+                    console.log('Grades tablosu oluşturuldu veya zaten var');
+                }
+            });
+            
+            // Yanıt döndür
+            res.json({
+                success: true,
+                message: 'Veritabanı tabloları oluşturuldu',
+            });
+        }
     } catch (error) {
         console.error('Veritabanı tabloları oluşturulurken hata:', error);
         res.status(500).json({
@@ -1809,4 +1915,82 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server ${PORT} portunda çalışıyor...`);
     console.log(`http://localhost:${PORT} adresinden erişebilirsiniz`);
+});
+
+// Duyurular için API endpoint'leri
+// 1. Tüm duyuruları getir
+app.get('/api/announcements/get', (req, res) => {
+    console.log('Duyurular getiriliyor...');
+    
+    try {
+        let query;
+        if (isPg) {
+            query = `SELECT * FROM announcements ORDER BY "createdAt" DESC`;
+        } else {
+            query = `SELECT * FROM announcements ORDER BY createdAt DESC`;
+        }
+        
+        db.all(query, [], (err, rows) => {
+            if (err) {
+                console.error('Duyurular çekilirken hata:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Veritabanı hatası',
+                    details: err.message 
+                });
+            }
+            
+            console.log(`${rows.length} adet duyuru kaydı bulundu.`);
+            res.json({
+                success: true,
+                announcements: rows
+            });
+        });
+    } catch (error) {
+        console.error('Duyuru getirme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası',
+            details: error.message
+        });
+    }
+});
+
+// Sınav notları için API endpoint'leri
+// 1. Tüm notları getir
+app.get('/api/grades/get', (req, res) => {
+    console.log('Sınav notları getiriliyor...');
+    
+    try {
+        let query;
+        if (isPg) {
+            query = `SELECT * FROM grades ORDER BY "examDate" DESC`;
+        } else {
+            query = `SELECT * FROM grades ORDER BY examDate DESC`;
+        }
+        
+        db.all(query, [], (err, rows) => {
+            if (err) {
+                console.error('Sınav notları çekilirken hata:', err);
+                return res.status(500).json({ 
+                    success: false, 
+                    error: 'Veritabanı hatası',
+                    details: err.message 
+                });
+            }
+            
+            console.log(`${rows.length} adet sınav notu kaydı bulundu.`);
+            res.json({
+                success: true,
+                grades: rows
+            });
+        });
+    } catch (error) {
+        console.error('Sınav notu getirme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası',
+            details: error.message
+        });
+    }
 });
