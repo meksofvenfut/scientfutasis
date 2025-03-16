@@ -1527,39 +1527,61 @@ function addScheduleExamples() {
     // Veri tabanı tipine göre sorgu hazırla ve çalıştır
     if (isPg) {
         // PostgreSQL için
-        const now = new Date().toISOString();
-        scheduleData.forEach(data => {
-            const query = `
-                INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (userId, rowIndex, colIndex) 
-                DO UPDATE SET content = $4, updatedAt = $6
-            `;
-            const params = [data.userId, data.rowIndex, data.colIndex, data.content, now, now];
-            
-            db.run(query, params, err => {
-                if (err) {
-                    console.error('Örnek ders programı verisi eklenirken hata:', err.message);
-                }
-            });
+        // Önce mevcut verileri temizleyelim
+        db.run(`DELETE FROM schedule WHERE userId = 1`, [], function(err) {
+            if (err) {
+                console.error('Schedule verileri temizlenirken hata:', err.message);
+            } else {
+                console.log('Schedule verileri temizlendi, yeni kayıtlar ekleniyor');
+                
+                // Şimdi yeni kayıtları ekleyelim
+                const now = new Date().toISOString();
+                let insertedCount = 0;
+                
+                scheduleData.forEach(data => {
+                    const query = `
+                        INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                    `;
+                    const params = [data.userId, data.rowIndex, data.colIndex, data.content, now, now];
+                    
+                    db.run(query, params, err => {
+                        if (err) {
+                            console.error('Örnek ders programı verisi eklenirken hata:', err.message);
+                        } else {
+                            insertedCount++;
+                            console.log(`Schedule kaydı eklendi: ${insertedCount}/${scheduleData.length}`);
+                        }
+                    });
+                });
+            }
         });
     } else {
         // SQLite için
-        const stmt = db.prepare(`INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
-                                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
-        
-        scheduleData.forEach(data => {
-            stmt.run(data.userId, data.rowIndex, data.colIndex, data.content, err => {
-                if (err) {
-                    console.error('Örnek ders programı verisi eklenirken hata:', err.message);
-                }
-            });
+        // Önce mevcut verileri temizleyelim
+        db.run(`DELETE FROM schedule WHERE userId = 1`, [], function(err) {
+            if (err) {
+                console.error('Schedule verileri temizlenirken hata:', err.message);
+            } else {
+                console.log('Schedule verileri temizlendi, yeni kayıtlar ekleniyor');
+                
+                // Şimdi yeni kayıtları ekleyelim
+                const stmt = db.prepare(`INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                                   VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+                
+                scheduleData.forEach(data => {
+                    stmt.run(data.userId, data.rowIndex, data.colIndex, data.content, err => {
+                        if (err) {
+                            console.error('Örnek ders programı verisi eklenirken hata:', err.message);
+                        }
+                    });
+                });
+                
+                stmt.finalize();
+                console.log('Örnek ders programı kayıtları eklendi');
+            }
         });
-        
-        stmt.finalize();
     }
-    
-    console.log('Örnek ders programı kayıtları eklendi');
 }
 
 // Örnek ödev verilerini ekleyen fonksiyon
@@ -2097,6 +2119,132 @@ app.get('/api/debug/db-status', (req, res) => {
             error: 'Sunucu hatası', 
             details: error.message,
             stack: error.stack
+        });
+    }
+});
+
+// Tüm örnek verileri yükleyen endpoint
+app.get('/api/init-data', (req, res) => {
+    console.log('Örnek verileri yükleme isteği alındı');
+    
+    try {
+        // Kullanıcıları kontrol et
+        db.get("SELECT COUNT(*) as count FROM users", [], (err, row) => {
+            if (err) {
+                console.error('Kullanıcı sayısı kontrolü hatası:', err.message);
+                return res.status(500).json({ success: false, error: 'Veritabanı hatası' });
+            }
+            
+            // Mevcut kullanıcı sayısı
+            const userCount = row ? row.count : 0;
+            console.log(`Veritabanında ${userCount} kullanıcı var`);
+            
+            // Örnek kullanıcılar ekle
+            if (userCount < 2) {
+                console.log('Örnek kullanıcılar ekleniyor...');
+                const password = Buffer.from('123456').toString('base64');
+                
+                // PostgreSQL için kullanıcı ekle
+                if (isPg) {
+                    const insertAdmin = `
+                        INSERT INTO users (name, username, password, userType)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (username) DO UPDATE SET userType = $4
+                    `;
+                    db.run(insertAdmin, ['MEK Admin', 'MEK', password, 'admin'], err => {
+                        if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                        else console.log('MEK admin kullanıcısı eklendi veya güncellendi');
+                    });
+                    
+                    db.run(insertAdmin, ['Admin User', 'admin', password, 'admin'], err => {
+                        if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                        else console.log('admin kullanıcısı eklendi veya güncellendi');
+                    });
+                } else {
+                    // SQLite için kullanıcı ekle
+                    db.run(
+                        `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                        ['MEK Admin', 'MEK', password, 'admin'],
+                        err => {
+                            if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                            else console.log('MEK admin kullanıcısı eklendi');
+                        }
+                    );
+                    
+                    db.run(
+                        `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                        ['Admin User', 'admin', password, 'admin'],
+                        err => {
+                            if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                            else console.log('admin kullanıcısı eklendi');
+                        }
+                    );
+                }
+            }
+            
+            // Ders programı verileri ekle
+            db.get("SELECT COUNT(*) as count FROM schedule", [], (err, row) => {
+                const scheduleCount = row ? row.count : 0;
+                console.log(`Veritabanında ${scheduleCount} ders programı kaydı var`);
+                
+                if (scheduleCount < 5) {
+                    console.log('Ders programı örnekleri ekleniyor...');
+                    addScheduleExamples();
+                }
+                
+                // Ödevler ekle
+                db.get("SELECT COUNT(*) as count FROM homework", [], (err, row) => {
+                    const homeworkCount = row ? row.count : 0;
+                    console.log(`Veritabanında ${homeworkCount} ödev kaydı var`);
+                    
+                    if (homeworkCount < 2) {
+                        console.log('Örnek ödevler ekleniyor...');
+                        addHomeworkExamples();
+                    }
+                    
+                    // Duyurular ekle
+                    db.get("SELECT COUNT(*) as count FROM announcements", [], (err, row) => {
+                        const announcementsCount = row ? row.count : 0;
+                        console.log(`Veritabanında ${announcementsCount} duyuru kaydı var`);
+                        
+                        if (announcementsCount < 2) {
+                            console.log('Örnek duyurular ekleniyor...');
+                            addAnnouncementExamples();
+                        }
+                        
+                        // Notlar ekle
+                        db.get("SELECT COUNT(*) as count FROM grades", [], (err, row) => {
+                            const gradesCount = row ? row.count : 0;
+                            console.log(`Veritabanında ${gradesCount} not kaydı var`);
+                            
+                            if (gradesCount < 2) {
+                                console.log('Örnek notlar ekleniyor...');
+                                addGradeExamples();
+                            }
+                            
+                            // Durum bilgisi gönder
+                            res.json({
+                                success: true,
+                                message: 'Örnek veriler yüklendi',
+                                stats: {
+                                    users: userCount,
+                                    schedule: scheduleCount,
+                                    homework: homeworkCount,
+                                    announcements: announcementsCount,
+                                    grades: gradesCount
+                                }
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Örnek veri yükleme hatası:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Sunucu hatası',
+            details: error.message
         });
     }
 });
