@@ -803,56 +803,100 @@ app.post('/api/login', (req, res) => {
 
 // 2. Kullanıcı kayıt endpoint'i
 app.post('/api/register', (req, res) => {
-    const { name, username, password, userType } = req.body;
+    try {
+        const { name, username, password, userType } = req.body;
+        
+        console.log('Yeni kullanıcı kayıt isteği alındı:', { name, username, userType });
     
-    console.log('Yeni kullanıcı kayıt isteği alındı:', { name, username, userType });
-
-    // İsim yoksa kullanıcı adını kullan
-    const userName = name || username;
-
-    if (!username || !password || !userType) {
-        console.log('Eksik bilgilerle kullanıcı kayıt girişimi');
-        return res.status(400).json({ 
-            success: false, 
-            error: 'Kullanıcı adı, şifre ve kullanıcı tipi gereklidir' 
-        });
-    }
+        // İsim yoksa kullanıcı adını kullan
+        const userName = name || username;
     
-    // Kullanıcı tipi kontrolü
-    const allowedTypes = ['admin', 'teacher', 'student'];
-    if (!allowedTypes.includes(userType)) {
-        return res.status(400).json({ error: 'Geçerli bir kullanıcı tipi seçin' });
-    }
-
-    // Kullanıcı adının benzersiz olup olmadığını kontrol et
-    db.get(`SELECT * FROM users WHERE username = ?`, [username], (err, row) => {
-        if (err) {
-            console.error('Kullanıcı kontrolü yapılırken hata:', err.message);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
+        if (!username || !password || !userType) {
+            console.log('Eksik bilgilerle kullanıcı kayıt girişimi');
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Kullanıcı adı, şifre ve kullanıcı tipi gereklidir' 
+            });
         }
         
-        if (row) {
-            return res.status(409).json({ error: 'Bu kullanıcı adı zaten kullanılıyor' });
+        // Kullanıcı tipi kontrolü
+        const allowedTypes = ['admin', 'teacher', 'student'];
+        if (!allowedTypes.includes(userType)) {
+            return res.status(400).json({ error: 'Geçerli bir kullanıcı tipi seçin' });
         }
+    
+        // Kullanıcı adının benzersiz olup olmadığını kontrol et
+        let query, params;
         
-        // Kullanıcıyı ekle
-        db.run(`INSERT INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`, 
-          [userName, username, password, userType], 
-          function(err) {
+        if (isPg) {
+            query = `SELECT * FROM users WHERE username = $1`;
+        } else {
+            query = `SELECT * FROM users WHERE username = ?`;
+        }
+        params = [username];
+        
+        db.get(query, params, (err, row) => {
             if (err) {
-              console.error('Kullanıcı eklenirken hata:', err.message);
-              return res.status(500).json({ error: 'Veritabanı hatası' });
+                console.error('Kullanıcı kontrolü yapılırken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false,
+                    error: 'Veritabanı hatası', 
+                    message: err.message 
+                });
             }
             
-            console.log(`Yeni kullanıcı eklendi. ID: ${this.lastID}, Zaman: ${getTurkishTimeString()}`);
+            if (row) {
+                return res.status(409).json({ 
+                    success: false,
+                    error: 'Bu kullanıcı adı zaten kullanılıyor' 
+                });
+            }
             
-            res.status(201).json({ 
-              success: true, 
-              message: 'Kullanıcı başarıyla eklendi',
-              userId: this.lastID 
+            // Kullanıcıyı ekle
+            const now = new Date().toISOString();
+            
+            if (isPg) {
+                query = `
+                    INSERT INTO users (name, username, password, "usertype", "lastlogin")
+                    VALUES ($1, $2, $3, $4, $5)
+                    RETURNING id
+                `;
+                params = [userName, username, password, userType, now];
+            } else {
+                query = `
+                    INSERT INTO users (name, username, password, userType, lastLogin)
+                    VALUES (?, ?, ?, ?, ?)
+                `;
+                params = [userName, username, password, userType, now];
+            }
+            
+            db.run(query, params, function(err) {
+                if (err) {
+                    console.error('Kullanıcı eklenirken hata:', err.message);
+                    return res.status(500).json({ 
+                        success: false, 
+                        error: 'Veritabanı hatası',
+                        message: err.message
+                    });
+                }
+                
+                console.log(`Yeni kullanıcı eklendi. ID: ${this.lastID}, Zaman: ${getTurkishTimeString()}`);
+                
+                res.status(201).json({ 
+                    success: true, 
+                    message: 'Kullanıcı başarıyla eklendi',
+                    userId: this.lastID 
+                });
             });
-          });
-    });
+        });
+    } catch (error) {
+        console.error('Kullanıcı kayıt hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Sunucu hatası',
+            message: error.message 
+        });
+    }
 });
 
 // 3. Kullanıcıları listeleme endpoint'i (sadece admin için)
