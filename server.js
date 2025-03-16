@@ -1105,7 +1105,7 @@ app.post('/api/homework/add', (req, res) => {
         
         if (isPg) {
             query = `
-                INSERT INTO homework (title, lesson, dueDate, description, isCompleted, createdAt, updatedAt)
+                INSERT INTO homework (title, lesson, "dueDate", description, "isCompleted", "createdAt", "updatedAt")
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id
             `;
@@ -2282,6 +2282,90 @@ app.post('/api/grades/add', (req, res) => {
         });
     } catch (error) {
         console.error('Sınav notu ekleme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 3. Duyuru güncelle
+app.put('/api/announcements/update/:id', (req, res) => {
+    console.log('Duyuru güncelleme isteği alındı:', req.params.id);
+    
+    const announcementId = req.params.id;
+    const { title, content, importance, userType } = req.body;
+    
+    // Yönetici kontrolü
+    if (userType !== 'admin' && userType !== 'Yönetici') {
+        console.error('Yetkisiz duyuru güncelleme girişimi:', userType);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    // Gerekli alanların kontrolü
+    if (!announcementId || !title || !content) {
+        console.error('Eksik bilgi ile duyuru güncelleme girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ID, başlık ve içerik gereklidir' 
+        });
+    }
+    
+    try {
+        // Varsayılan importance değeri
+        const announcementImportance = importance || 'normal';
+        const now = new Date().toISOString();
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                UPDATE announcements 
+                SET title = $1, content = $2, importance = $3, "updatedAt" = $4
+                WHERE id = $5
+                RETURNING id
+            `;
+            params = [title, content, announcementImportance, now, announcementId];
+        } else {
+            query = `
+                UPDATE announcements 
+                SET title = ?, content = ?, importance = ?, updatedAt = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            params = [title, content, announcementImportance, announcementId];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Duyuru güncellenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (this.changes === 0) {
+                console.log(`Güncellenecek duyuru bulunamadı - ID: ${announcementId}`);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Güncellenecek duyuru bulunamadı' 
+                });
+            }
+            
+            console.log(`Duyuru güncellendi - ID: ${announcementId}`);
+            res.json({ 
+                success: true, 
+                message: 'Duyuru başarıyla güncellendi', 
+                id: announcementId 
+            });
+        });
+    } catch (error) {
+        console.error('Duyuru güncelleme hatası:', error);
         res.status(500).json({ 
             success: false, 
             message: 'Sunucu hatası', 
