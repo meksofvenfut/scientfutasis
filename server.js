@@ -825,6 +825,10 @@ app.post('/api/register', (req, res) => {
             return res.status(400).json({ error: 'Geçerli bir kullanıcı tipi seçin' });
         }
     
+        // Şifreyi kodla (encode) - login ile aynı yöntemi kullan
+        const encodedPassword = Buffer.from(password).toString('base64');
+        console.log(`Şifre kodlandı: Orijinal uzunluk = ${password.length}, Kodlanmış uzunluk = ${encodedPassword.length}`);
+        
         // Kullanıcı adının benzersiz olup olmadığını kontrol et
         let query, params;
         
@@ -861,13 +865,13 @@ app.post('/api/register', (req, res) => {
                     VALUES ($1, $2, $3, $4, $5)
                     RETURNING id
                 `;
-                params = [userName, username, password, userType, now];
+                params = [userName, username, encodedPassword, userType, now];
             } else {
                 query = `
                     INSERT INTO users (name, username, password, userType, lastLogin)
                     VALUES (?, ?, ?, ?, ?)
                 `;
-                params = [userName, username, password, userType, now];
+                params = [userName, username, encodedPassword, userType, now];
             }
             
             db.run(query, params, function(err) {
@@ -2802,20 +2806,24 @@ app.put('/api/users/:id', (req, res) => {
                 
                 // Eğer şifre de değiştirilmek isteniyorsa
                 if (password && password.trim() !== '') {
+                    // Şifreyi kodla (encode) - login ve register ile aynı yöntemi kullan
+                    const encodedPassword = Buffer.from(password).toString('base64');
+                    console.log(`Şifre güncelleme kodlandı: Orijinal uzunluk = ${password.length}, Kodlanmış uzunluk = ${encodedPassword.length}`);
+                    
                     if (isPg) {
                         query = `
                             UPDATE users 
                             SET name = $1, username = $2, password = $3, "usertype" = $4
                             WHERE id = $5
                         `;
-                        params = [name, username, password, userType, userId];
+                        params = [name, username, encodedPassword, userType, userId];
                     } else {
                         query = `
                             UPDATE users 
                             SET name = ?, username = ?, password = ?, userType = ?
                             WHERE id = ?
                         `;
-                        params = [name, username, password, userType, userId];
+                        params = [name, username, encodedPassword, userType, userId];
                     }
                 } else {
                     // Şifre değiştirilmiyorsa
