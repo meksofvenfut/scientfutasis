@@ -1356,12 +1356,17 @@ document.addEventListener('DOMContentLoaded', () => {
             announcementData.forEach(announcement => {
                 try {
                     // Tarih formatını düzelt (Türkiye saati olarak)
-                    let createdDateStr = announcement.createdAt;
-                    let updatedDateStr = announcement.updatedAt;
+                    let createdDateStr = announcement.createdAt || new Date().toISOString();
+                    let updatedDateStr = announcement.updatedAt || new Date().toISOString();
                     
-                    // ISO formatına dönüştür ve Türkiye saat dilimini ekle
-                    let createdDate = new Date(createdDateStr + '+03:00');
-                    let updatedDate = new Date(updatedDateStr + '+03:00');
+                    // Tarihlerin geçerli olup olmadığını kontrol et
+                    const isValidDate = (dateStr) => {
+                        return dateStr && !isNaN(new Date(dateStr).getTime());
+                    };
+                    
+                    // Geçerli tarihler için işlem yap, değilse bugünün tarihini kullan
+                    let createdDate = isValidDate(createdDateStr) ? new Date(createdDateStr) : new Date();
+                    let updatedDate = isValidDate(updatedDateStr) ? new Date(updatedDateStr) : new Date();
                     
                     // Hangisini göstereceğimizi belirle
                     let displayDate = createdDate;
@@ -1503,12 +1508,17 @@ document.addEventListener('DOMContentLoaded', () => {
         announcementData.forEach(announcement => {
             try {
                 // Tarih formatını düzelt (Türkiye saati olarak)
-                let createdDateStr = announcement.createdAt;
-                let updatedDateStr = announcement.updatedAt;
+                let createdDateStr = announcement.createdAt || new Date().toISOString();
+                let updatedDateStr = announcement.updatedAt || new Date().toISOString();
                 
-                // ISO formatına dönüştür ve Türkiye saat dilimini ekle
-                let createdDate = new Date(createdDateStr + '+03:00');
-                let updatedDate = new Date(updatedDateStr + '+03:00');
+                // Tarihlerin geçerli olup olmadığını kontrol et
+                const isValidDate = (dateStr) => {
+                    return dateStr && !isNaN(new Date(dateStr).getTime());
+                };
+                
+                // Geçerli tarihler için işlem yap, değilse bugünün tarihini kullan
+                let createdDate = isValidDate(createdDateStr) ? new Date(createdDateStr) : new Date();
+                let updatedDate = isValidDate(updatedDateStr) ? new Date(updatedDateStr) : new Date();
                 
                 // Hangisini göstereceğimizi belirle
                 let displayDate = createdDate;
@@ -2071,31 +2081,44 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Not düzenleme modal'ını aç
     function editGradeItem(gradeId) {
+        console.log("editGradeItem fonksiyonu çağrıldı, ID:", gradeId);
         const grade = grades.find(g => g.id === gradeId);
         if (grade) {
             document.getElementById('editGradeId').value = grade.id;
-            document.getElementById('editGradeTitle').value = grade.title;
-            document.getElementById('editGradeLesson').value = grade.lesson;
-            document.getElementById('editGradeType').value = grade.type;
-            document.getElementById('editGradeDate').value = grade.examDate.split('T')[0]; // Tarih formatı ayarı
+            document.getElementById('editGradeTitle').value = grade.title || '';
+            document.getElementById('editGradeLesson').value = grade.lesson || '';
+            document.getElementById('editGradeType').value = grade.type || '';
             
-            // Dosya bilgilerini ayarla
+            // Sınav tarihini uygun formata çevir
+            const examDate = new Date(grade.examDate);
+            if (!isNaN(examDate.getTime())) {
+                // YYYY-MM-DD formatına çevir
+                const year = examDate.getFullYear();
+                const month = String(examDate.getMonth() + 1).padStart(2, '0');
+                const day = String(examDate.getDate()).padStart(2, '0');
+                document.getElementById('editGradeDate').value = `${year}-${month}-${day}`;
+            } else {
+                // Geçerli bir tarih değilse bugünün tarihini kullan
+                document.getElementById('editGradeDate').value = new Date().toISOString().split('T')[0];
+            }
+            
+            // Mevcut dosya bilgisini göster
             const existingFileEl = document.getElementById('editGradeExistingFile');
             const existingFileNameEl = document.getElementById('editGradeExistingFileName');
             const keepExistingFileEl = document.getElementById('editGradeKeepExistingFile');
-            const viewFileBtn = document.getElementById('editGradeViewFileBtn');
             
             if (grade.file_name) {
                 existingFileEl.style.display = 'flex';
                 existingFileNameEl.textContent = grade.file_name;
                 keepExistingFileEl.value = 'true';
                 
-                // Görüntüle butonuna event listener ekle
+                // Dosya görüntüleme butonu
+                const viewFileBtn = document.getElementById('editGradeViewFileBtn');
                 viewFileBtn.onclick = function() {
-                    window.open(`/api/grades/download/${grade.id}`, '_blank');
+                    window.open(`/uploads/${grade.file_path}`, '_blank');
                 };
                 
-                // Dosya kaldırma butonuna event listener ekle
+                // Dosya kaldırma butonu
                 const removeFileBtn = document.getElementById('editGradeRemoveFileBtn');
                 removeFileBtn.onclick = function() {
                     existingFileEl.style.display = 'none';
@@ -2107,28 +2130,38 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             openModal(editGradeModal);
+        } else {
+            console.error("Sınav notu bulunamadı:", gradeId);
+            showNotification("Sınav notu bulunamadı", "error");
         }
     }
     
     // Not silme modal'ını aç
     function deleteGradeItem(gradeId) {
+        console.log("deleteGradeItem fonksiyonu çağrıldı, ID:", gradeId);
         const grade = grades.find(g => g.id === gradeId);
         if (grade) {
             document.getElementById('deleteGradeId').value = grade.id;
-            document.getElementById('deleteGradeTitle').textContent = grade.title;
-            document.getElementById('deleteGradeLesson').textContent = grade.lesson;
-            document.getElementById('deleteGradeType').textContent = grade.type;
+            document.getElementById('deleteGradeTitle').textContent = grade.title || 'İsimsiz Not';
+            document.getElementById('deleteGradeLesson').textContent = grade.lesson || 'Belirtilmemiş';
+            document.getElementById('deleteGradeType').textContent = grade.type || 'Belirtilmemiş';
             
             // Tarih formatı düzenleme
             const examDate = new Date(grade.examDate);
-            const formattedDate = examDate.toLocaleDateString('tr-TR', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-            });
+            let formattedDate = "Belirtilmemiş";
+            if (!isNaN(examDate.getTime())) {
+                formattedDate = examDate.toLocaleDateString('tr-TR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                });
+            }
             document.getElementById('deleteGradeDate').textContent = formattedDate;
             
             openModal(deleteGradeModal);
+        } else {
+            console.error("Silinecek sınav notu bulunamadı:", gradeId);
+            showNotification("Silinecek sınav notu bulunamadı", "error");
         }
     }
     
@@ -2298,150 +2331,67 @@ document.addEventListener('DOMContentLoaded', () => {
     // Dosya yükleme alanı için event listener'lar
     document.addEventListener('DOMContentLoaded', function() {
         // Dosya seçim göstergesi - Ekleme formu
-        const addGradeFile = document.getElementById('addGradeFile');
+        const addGradeFileInput = document.getElementById('addGradeFile');
         const addGradeFileName = document.getElementById('addGradeFileName');
-        const addFileUploadBox = addGradeFile ? addGradeFile.nextElementSibling : null;
         
-        if (addGradeFile && addGradeFileName && addFileUploadBox) {
-            // Dosya değişikliği için listener
-            addGradeFile.addEventListener('change', function() {
-                console.log('Dosya seçildi: ', this.files);
-                if (this.files.length > 0) {
-                    addGradeFileName.textContent = this.files[0].name;
-                    addGradeFileName.style.display = 'block';
+        if (addGradeFileInput && addGradeFileName) {
+            addGradeFileInput.addEventListener('change', function() {
+                if (addGradeFileInput.files.length > 0) {
+                    addGradeFileName.textContent = addGradeFileInput.files[0].name;
+                    addGradeFileName.style.display = 'inline-block';
                 } else {
                     addGradeFileName.textContent = '';
                     addGradeFileName.style.display = 'none';
                 }
             });
-            
-            // Sürükle-bırak olayları
-            addFileUploadBox.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                this.classList.add('drag-over');
-            });
-            
-            addFileUploadBox.addEventListener('dragleave', function() {
-                this.classList.remove('drag-over');
-            });
-            
-            addFileUploadBox.addEventListener('drop', function(e) {
-                e.preventDefault();
-                this.classList.remove('drag-over');
-                
-                if (e.dataTransfer.files.length > 0) {
-                    addGradeFile.files = e.dataTransfer.files;
-                    const event = new Event('change');
-                    addGradeFile.dispatchEvent(event);
-                }
-            });
-            
-            // Tıklama işleminde input'u tetikle - hem kutuya hem de metin bölümüne tıklama için
-            addFileUploadBox.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('Dosya yükleme kutusu tıklandı');
-                addGradeFile.click();
-            });
-            
-            // SVG ve span elementlerine tıklama olayları ekle (event propagation sorunlarını önlemek için)
-            const uploadSvg = addFileUploadBox.querySelector('svg');
-            const uploadText = addFileUploadBox.querySelector('.upload-text');
-            
-            if (uploadSvg) {
-                uploadSvg.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('SVG tıklandı');
-                    addGradeFile.click();
-                });
-            }
-            
-            if (uploadText) {
-                uploadText.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('Metin tıklandı');
-                    addGradeFile.click();
-                });
-            }
         }
         
         // Dosya seçim göstergesi - Düzenleme formu
-        const editGradeFile = document.getElementById('editGradeFile');
+        const editGradeFileInput = document.getElementById('editGradeFile');
         const editGradeFileName = document.getElementById('editGradeFileName');
-        const editFileUploadBox = editGradeFile ? editGradeFile.nextElementSibling : null;
         
-        if (editGradeFile && editGradeFileName && editFileUploadBox) {
-            // Dosya değişikliği için listener
-            editGradeFile.addEventListener('change', function() {
-                console.log('Düzenleme: Dosya seçildi: ', this.files);
-                if (this.files.length > 0) {
-                    editGradeFileName.textContent = this.files[0].name;
-                    editGradeFileName.style.display = 'block';
+        if (editGradeFileInput && editGradeFileName) {
+            editGradeFileInput.addEventListener('change', function() {
+                if (editGradeFileInput.files.length > 0) {
+                    editGradeFileName.textContent = editGradeFileInput.files[0].name;
+                    editGradeFileName.style.display = 'inline-block';
+                    
+                    // Mevcut dosya varsa, gizle ve "dosyayı koru" değerini false yap
+                    const existingFileEl = document.getElementById('editGradeExistingFile');
+                    const keepExistingFileEl = document.getElementById('editGradeKeepExistingFile');
+                    
+                    if (existingFileEl && keepExistingFileEl) {
+                        existingFileEl.style.display = 'none';
+                        keepExistingFileEl.value = 'false';
+                    }
                 } else {
                     editGradeFileName.textContent = '';
                     editGradeFileName.style.display = 'none';
                 }
             });
-            
-            // Sürükle-bırak olayları
-            editFileUploadBox.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                this.classList.add('drag-over');
-            });
-            
-            editFileUploadBox.addEventListener('dragleave', function() {
-                this.classList.remove('drag-over');
-            });
-            
-            editFileUploadBox.addEventListener('drop', function(e) {
-                e.preventDefault();
-                this.classList.remove('drag-over');
-                
-                if (e.dataTransfer.files.length > 0) {
-                    editGradeFile.files = e.dataTransfer.files;
-                    const event = new Event('change');
-                    editGradeFile.dispatchEvent(event);
-                }
-            });
-            
-            // Tıklama işleminde input'u tetikle - hem kutuya hem de metin bölümüne tıklama için
-            editFileUploadBox.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log('Düzenleme: Dosya yükleme kutusu tıklandı');
-                editGradeFile.click();
-            });
-            
-            // SVG ve span elementlerine tıklama olayları ekle (event propagation sorunlarını önlemek için)
-            const uploadSvg = editFileUploadBox.querySelector('svg');
-            const uploadText = editFileUploadBox.querySelector('.upload-text');
-            
-            if (uploadSvg) {
-                uploadSvg.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('Düzenleme: SVG tıklandı');
-                    editGradeFile.click();
-                });
-            }
-            
-            if (uploadText) {
-                uploadText.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('Düzenleme: Metin tıklandı');
-                    editGradeFile.click();
-                });
-            }
         }
         
-        // Silme butonu için event listener
+        // Sınav notu silme butonuna tıklama
         const deleteGradeBtn = document.getElementById('deleteGradeBtn');
         if (deleteGradeBtn) {
-            deleteGradeBtn.addEventListener('click', function() {
-                deleteGrade();
+            deleteGradeBtn.addEventListener('click', deleteGrade);
+        }
+        
+        // Sınav notu düzenleme formu gönderildiğinde
+        const editGradeForm = document.getElementById('editGradeForm');
+        if (editGradeForm) {
+            editGradeForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                updateGrade();
+            });
+        }
+        
+        // Sınav notu ekleme formu gönderildiğinde
+        const addGradeForm = document.getElementById('addGradeForm');
+        if (addGradeForm) {
+            addGradeForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                addNewGrade();
             });
         }
     });
@@ -2772,6 +2722,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global fonksiyonları tanımla
     window.editUserItem = editUserItem;
     window.deleteUserItem = deleteUserItem;
+    window.editGradeItem = editGradeItem;
+    window.deleteGradeItem = deleteGradeItem;
 
     // Ders programı verilerini güncelle
     function updateScheduleDisplay() {
