@@ -170,6 +170,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ username, password, userType })
             });
             
+            console.log(`Giriş denemesi: ${username}, ${userType}`); // Debug için ekledik
+            
             // Yanıt kontrolü
             if (!response.ok) {
                 const errorText = await response.text();

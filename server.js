@@ -185,25 +185,54 @@ db.serialize(() => {
     });
     
     // Varsayılan kullanıcıları kontrol et ve oluştur
-    db.get("SELECT COUNT(*) as count FROM users WHERE username = 'MEK' AND userType = 'Yönetici'", [], (err, row) => {
+    console.log('Varsayılan yönetici kullanıcısı kontrolü yapılıyor...');
+    
+    // Önce userType'ları kontrol edelim
+    db.all("SELECT DISTINCT userType FROM users", [], (err, rows) => {
         if (err) {
-            console.error('Kullanıcı kontrolü yaparken hata:', err.message);
+            console.error('Kullanıcı tipleri kontrolü yaparken hata:', err.message);
+        } else {
+            console.log('Mevcut kullanıcı tipleri:', rows.map(r => r.userType).join(', '));
+        }
+    });
+    
+    // MEK admin kullanıcısı için hem "Yönetici" hem de "admin" kontrolü yapalım
+    db.get("SELECT COUNT(*) as count FROM users", [], (err, row) => {
+        if (err) {
+            console.error('Kullanıcı sayısı kontrolü yaparken hata:', err.message);
             return;
         }
         
-        // MEK kullanıcısı yoksa oluştur
-        if (row.count === 0) {
+        console.log(`Veritabanında toplam ${row.count} kullanıcı mevcut.`);
+        
+        // Hiç kullanıcı yoksa veya çok az varsa yönetici ekleyelim
+        if (row.count < 2) {
+            console.log('Az sayıda kullanıcı var, yönetici ekleme işlemi yapılacak...');
+            
             // Base64 ile şifreleme (123456 şifresini Base64'e çeviriyoruz)
             const password = Buffer.from('123456').toString('base64');
             
+            // Hem "Yönetici" hem de "admin" tipiyle oluşturalım
             db.run(
-                `INSERT INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
                 ['MEK Admin', 'MEK', password, 'Yönetici'],
                 function(err) {
                     if (err) {
-                        console.error('Varsayılan yönetici oluştururken hata:', err.message);
+                        console.error('Varsayılan Yönetici kullanıcısı oluştururken hata:', err.message);
                     } else {
-                        console.log('Varsayılan yönetici oluşturuldu: MEK');
+                        console.log('Varsayılan Yönetici kullanıcısı oluşturuldu: MEK');
+                    }
+                }
+            );
+            
+            db.run(
+                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                ['MEK Admin', 'admin', password, 'admin'],
+                function(err) {
+                    if (err) {
+                        console.error('Varsayılan admin kullanıcısı oluştururken hata:', err.message);
+                    } else {
+                        console.log('Varsayılan admin kullanıcısı oluşturuldu: admin');
                     }
                 }
             );
