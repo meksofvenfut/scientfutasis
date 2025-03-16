@@ -2098,31 +2098,21 @@ app.post('/api/users/update', (req, res) => {
             }
             
             if (this.changes === 0) {
-                console.log(`Güncellenecek kullanıcı bulunamadı: ${username}`);
                 return res.status(404).json({ 
                     success: false, 
                     message: 'Kullanıcı bulunamadı' 
                 });
             }
             
-            console.log(`Kullanıcı tipi güncellendi: ${username} -> ${userType}`);
-            
-            // Başarılı yanıt
-            db.get(`SELECT id, username, userType FROM users WHERE username = ?`, [username], (err, user) => {
-                if (err) {
-                    console.error('Kullanıcı bilgileri alınırken hata:', err.message);
-                }
-                
-                res.json({ 
-                    success: true, 
-                    message: `Kullanıcı tipi başarıyla güncellendi: ${userType}`,
-                    user: user || { username, userType }
-                });
+            return res.json({ 
+                success: true, 
+                message: 'Kullanıcı tipi güncellendi',
+                userType: userType
             });
         });
     } catch (error) {
-        console.error('Kullanıcı tipi güncelleme hatası:', error);
-        res.status(500).json({ 
+        console.error('Kullanıcı güncellenirken hata:', error);
+        return res.status(500).json({ 
             success: false, 
             message: 'Sunucu hatası', 
             error: error.message 
