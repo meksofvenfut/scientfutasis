@@ -1,0 +1,16 @@
+# Node modules
+node_modules/
+
+# Veritabanı ve yüklenen dosyalar
+database/*.db
+uploads/*
+!uploads/.gitkeep
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Çalışma zamanı verileri
+.env
+.DS_Store 
