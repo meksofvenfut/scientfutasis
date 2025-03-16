@@ -815,23 +815,35 @@ app.get('/api/users', (req, res) => {
     const currentTime = getCurrentTimestamp();
     console.log(`Kullanıcılar çekiliyor - Zaman: ${getTurkishTimeString()}`);
   
-    // Sadece yöneticilere izin ver (gerçek uygulamada oturum kontrolü yapılmalı)
-    // Bu örnekte oturum kontrolü atlanmıştır
+    let query;
+    if (isPg) {
+        // PostgreSQL sorgusu - küçük harfle sütun adları kullanır
+        query = `SELECT id, name, username, "usertype" as userType, "lastlogin" as lastLogin FROM users`;
+    } else {
+        query = `SELECT id, name, username, userType, lastLogin FROM users`;
+    }
   
-    db.all(`SELECT id, name, username, userType, lastLogin FROM users`, [], (err, rows) => {
+    db.all(query, [], (err, rows) => {
         if (err) {
             console.error('Kullanıcılar çekilirken hata:', err.message);
             return res.status(500).json({ success: false, message: 'Sunucu hatası' });
         }
         
         console.log(`${rows.length} adet kullanıcı kaydı bulundu.`);
-        res.json({ success: true, users: rows });
+        // Direkt dizi olarak dön
+        res.json(rows);
     });
 });
 
 // 3. Kullanıcıları listeleme endpoint'i (sadece admin için)
 app.get('/api/users/list', (req, res) => {
-    const query = `SELECT id, username, userType, createdAt FROM users`;
+    let query;
+    if (isPg) {
+        query = `SELECT id, username, "usertype" as userType, "createdat" as createdAt FROM users`;
+    } else {
+        query = `SELECT id, username, userType, createdAt FROM users`;
+    }
+    
     db.all(query, [], (err, users) => {
         if (err) {
             return res.status(500).json({ error: 'Veritabanı hatası' });
@@ -1050,6 +1062,7 @@ app.get('/api/homework/get', (req, res) => {
         }
         
         console.log(`${rows.length} adet ödev kaydı bulundu. Zaman: ${getTurkishTimeString()}`);
+        // Direkt dizi olarak dön, içinde nesne olarak değil
         res.json(rows);
     });
 });
@@ -1986,10 +1999,8 @@ app.get('/api/announcements/get', (req, res) => {
             }
             
             console.log(`${rows.length} adet duyuru kaydı bulundu.`);
-            res.json({
-                success: true,
-                announcements: rows
-            });
+            // Direkt dizi olarak dön, içinde nesne olarak değil
+            res.json(rows);
         });
     } catch (error) {
         console.error('Duyuru getirme hatası:', error);
@@ -2025,10 +2036,8 @@ app.get('/api/grades/get', (req, res) => {
             }
             
             console.log(`${rows.length} adet sınav notu kaydı bulundu.`);
-            res.json({
-                success: true,
-                grades: rows
-            });
+            // Direkt dizi olarak dön, içinde nesne olarak değil
+            res.json(rows);
         });
     } catch (error) {
         console.error('Sınav notu getirme hatası:', error);
