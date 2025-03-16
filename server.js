@@ -1801,6 +1801,234 @@ app.get('/api/debug/db-status', (req, res) => {
             `;
         }
         
+        db.all(tablesQuery, [], async (err, tables) => {
+            if (err) {
+                console.error('Tablo listesi alınırken hata:', err.message);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Veritabanı tabloları alınamadı',
+                    details: err.message
+                });
+            }
+            
+            // Bulunan tablolar için bilgi topla
+            const tablePromises = tables.map(async (table) => {
+                const tableName = table.table_name;
+                
+                // Sistem tablolarını atla
+                if (tableName.startsWith('pg_') || 
+                    tableName === 'sqlite_sequence' || 
+                    tableName.startsWith('information_schema') || 
+                    tableName.startsWith('_')) {
+                    return null;
+                }
+                
+                // Tablo bilgilerini al (kayıt sayısı ve örnek veriler)
+                try {
+                    // Kayıt sayısı
+                    const countQuery = isPg ?
+                        `SELECT COUNT(*) as count FROM "${tableName}"` :
+                        `SELECT COUNT(*) as count FROM "${tableName}"`;
+                    
+                    const countResult = await new Promise((resolve, reject) => {
+                        db.get(countQuery, [], (err, result) => {
+                            if (err) reject(err);
+                            else resolve(result);
+                        });
+                    });
+                    
+                    // Örnek veriler (ilk 5 kayıt)
+                    const sampleQuery = isPg ?
+                        `SELECT * FROM "${tableName}" LIMIT 5` :
+                        `SELECT * FROM "${tableName}" LIMIT 5`;
+                    
+                    const sampleResult = await new Promise((resolve, reject) => {
+                        db.all(sampleQuery, [], (err, results) => {
+                            if (err) reject(err);
+                            else resolve(results || []);
+                        });
+                    });
+                    
+                    return {
+                        tableName,
+                        recordCount: countResult ? countResult.count : 0,
+                        sampleRecords: sampleResult || []
+                    };
+                } catch (err) {
+                    console.error(`Tablo bilgisi alınırken hata (${tableName}):`, err.message);
+                    return {
+                        tableName,
+                        error: err.message,
+                        recordCount: 0,
+                        sampleRecords: []
+                    };
+                }
+            });
+            
+            // Tüm tablo bilgilerini topla
+            try {
+                const tableResults = await Promise.all(tablePromises);
+                // null sonuçları filtrele
+                result.tables = tableResults.filter(t => t !== null);
+                
+                // Sonuçları döndür
+                return res.json({
+                    success: true,
+                    ...result
+                });
+            } catch (error) {
+                console.error('Tablo bilgileri toplanırken hata:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Tablo bilgileri toplanamadı',
+                    details: error.message
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Veritabanı durumu kontrolü hatası:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Sunucu hatası',
+            details: error.message
+        });
+    }
+});
+
+// Duyurular için API endpoint'leri
+// 1. Tüm duyuruları getir
+app.get('/api/announcements/get', (req, res) => {
+    let query;
+    
+    if (isPg) {
+        query = `SELECT * FROM announcements ORDER BY "createdAt" DESC`;
+    } else {
+        query = `SELECT * FROM announcements ORDER BY createdAt DESC`;
+    }
+    
+    db.all(query, [], (err, rows) => {
+        if (err) {
+            console.error(`Duyuru verileri çekilirken hata (${getTurkishTimeString()}):`, err);
+            return res.status(500).json({ error: 'Veritabanı hatası' });
+        }
+        
+        console.log(`${rows.length} adet duyuru bulundu. Zaman: ${getTurkishTimeString()}`);
+        res.json(rows);
+    });
+});
+
+// 2. Yeni duyuru ekle
+app.post('/api/announcements/add', (req, res) => {
+    console.log('Yeni duyuru ekleme isteği alındı:', req.body);
+    
+    const { title, content, importance, userType } = req.body;
+    
+    // Yönetici kontrolü
+    if (userType !== 'admin' && userType !== 'Yönetici') {
+        console.error('Yetkisiz duyuru ekleme girişimi:', userType);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    // Gerekli alanların kontrolü
+    if (!title || !content) {
+        console.error('Eksik bilgi ile duyuru ekleme girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Başlık ve içerik gereklidir' 
+        });
+    }
+    
+    try {
+        const announcementImportance = importance || 'normal';
+        const now = new Date().toISOString();
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                INSERT INTO announcements (title, content, importance, "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+            `;
+            params = [title, content, announcementImportance, now, now];
+        } else {
+            query = `
+                INSERT INTO announcements (title, content, importance, createdAt, updatedAt)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `;
+            params = [title, content, announcementImportance];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Duyuru eklenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            console.log(`Yeni duyuru eklendi: ${title} - ID: ${this.lastID}`);
+            res.json({ 
+                success: true, 
+                message: 'Duyuru başarıyla eklendi', 
+                id: this.lastID 
+            });
+        });
+    } catch (error) {
+        console.error('Duyuru ekleme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 3. Duyuru düzenle
+app.put('/api/announcements/update/:id', (req, res) => {
+    console.log('Duyuru güncelleme isteği alındı:', req.params.id);
+    
+    const announcementId = req.params.id;
+    const { title, content, importance, userType } = req.body;
+    
+    // Yönetici kontrolü
+    if (userType !== 'admin' && userType !== 'Yönetici') {
+        console.error('Yetkisiz duyuru güncelleme girişimi:', userType);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    // Gerekli alanların kontrolü
+    if (!announcementId || !title || !content) {
+        console.error('Eksik bilgi ile duyuru güncelleme girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ID, başlık ve içerik gereklidir' 
+        });
+    }
+    
+    try {
+        const announcementImportance = importance || 'normal';
+        const now = new Date().toISOString();
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                UPDATE announcements 
+                SET title = $1, content = $2, importance = $3, "updatedAt" = $4
+                WHERE id = $5
+                RETURNING id
+            `;
+            params = [title, content, announcementImportance, now, announcementId];
+        } else {
             query = `
                 UPDATE announcements 
                 SET title = ?, content = ?, importance = ?, updatedAt = CURRENT_TIMESTAMP
@@ -1910,4 +2138,18 @@ app.delete('/api/announcements/delete/:id', (req, res) => {
             error: error.message 
         });
     }
+});
+
+// Sunucuyu başlat
+const server = app.listen(PORT, () => {
+    console.log(`Server ${PORT} portunda başlatıldı: http://localhost:${PORT}`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM sinyali alındı, sunucu kapatılıyor...');
+    server.close(() => {
+        console.log('Sunucu kapatıldı.');
+        process.exit(0);
+    });
 });
