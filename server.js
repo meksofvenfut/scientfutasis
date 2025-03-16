@@ -803,7 +803,7 @@ app.get('/api/schedule/get', (req, res) => {
         let query, params;
         
         if (isPg) {
-            query = `SELECT rowIndex, colIndex, content FROM schedule WHERE userId = $1`;
+            query = `SELECT "rowIndex", "colIndex", content FROM schedule WHERE "userId" = $1`;
             params = [userId];
         } else {
             query = `SELECT rowIndex, colIndex, content FROM schedule WHERE userId = ?`;
@@ -818,7 +818,8 @@ app.get('/api/schedule/get', (req, res) => {
                 console.error('Ders programı verileri alınırken hata:', err);
                 return res.status(500).json({
                     success: false,
-                    error: 'Veritabanı hatası'
+                    error: 'Veritabanı hatası',
+                    details: err.message
                 });
             }
             
@@ -829,10 +830,18 @@ app.get('/api/schedule/get', (req, res) => {
             
             if (rows && rows.length > 0) {
                 rows.forEach(row => {
-                    // Her hücre için benzersiz bir key oluştur: {rowIndex}_{colIndex}
-                    const cellKey = `${row.rowIndex}_${row.colIndex}`;
-                    // Veriyi doğrudan bu key altına yerleştir
-                    scheduleData[cellKey] = row.content;
+                    // PostgreSQL'de sütun isimleri küçük harfle dönebilir, bu yüzden kontrol ediyoruz
+                    const rowIndex = row.rowIndex || row.rowindex || row["rowIndex"] || row["rowindex"];
+                    const colIndex = row.colIndex || row.colindex || row["colIndex"] || row["colindex"];
+                    
+                    if (rowIndex && colIndex) {
+                        // Her hücre için benzersiz bir key oluştur: {rowIndex}_{colIndex}
+                        const cellKey = `${rowIndex}_${colIndex}`;
+                        // Veriyi doğrudan bu key altına yerleştir
+                        scheduleData[cellKey] = row.content;
+                    } else {
+                        console.error('Hatalı veri formatı:', row);
+                    }
                 });
             }
             
@@ -1571,9 +1580,9 @@ function addScheduleExamples() {
             if (isPg) {
                 // PostgreSQL için
                 const query = `
-                    INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                    INSERT INTO schedule ("userId", "rowIndex", "colIndex", content, "createdAt", "updatedAt")
                     VALUES ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (userId, rowIndex, colIndex) DO UPDATE SET content = $4, updatedAt = $6
+                    ON CONFLICT ("userId", "rowIndex", "colIndex") DO UPDATE SET content = $4, "updatedAt" = $6
                 `;
                 db.run(query, [item.userId, item.rowIndex, item.colIndex, item.content, now, now], err => {
                     if (err) console.error('Ders programı kaydı eklenirken hata:', err.message);
