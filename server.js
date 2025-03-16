@@ -752,96 +752,106 @@ app.get('/api/schedule/get', (req, res) => {
 
 // 2. Ders programını kaydet
 app.post('/api/schedule/save', (req, res) => {
-    // Önbellek başlıklarını ayarla
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
+    console.log(`Ders programı kayıt isteği alındı - Zaman: ${getTurkishTimeString()}`);
     
-    // Kullanıcı bilgilerini al
-    const userId = req.body.userId || 0;
-    const userType = req.body.userType;
+    // Client'tan gelen veri
+    const userId = req.body.userId || 1; // Varsayılan olarak 1 kullan
     const scheduleData = req.body.data || req.body; // Ya data içinde ya da direkt olarak gelecek
     
-    // Sadece yöneticiler ders programını düzenleyebilir
-    if (userType !== 'admin') {
-        console.log('Yetkisiz erişim - Sadece yöneticiler ders programını kaydedebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler ders programını düzenleyebilir!'
+    console.log(`Ders programı kaydediliyor - Kullanıcı: ${userId}`);
+    
+    if (!scheduleData) {
+        console.error('Ders programı verisi eksik');
+        return res.status(400).json({
+            success: false,
+            message: 'Ders programı verisi gereklidir'
         });
     }
     
-    console.log(`Ders programı kaydediliyor (Global program)`);
-    
-    if (!scheduleData) {
-        return res.status(400).json({ error: 'Ders programı verileri gereklidir' });
-    }
-    
-    // İşlemi bir transaction içinde gerçekleştir
-    db.serialize(() => {
-        db.run('BEGIN TRANSACTION');
+    try {
+        // Önce mevcut kayıtları sil
+        let deleteQuery;
+        let deleteParams;
         
-        try {
-            // Önce bu kullanıcıya ait tüm kayıtları temizle
-            const deleteQuery = `DELETE FROM schedule WHERE userId = ?`;
-            db.run(deleteQuery, [userId], function(err) {
-                if (err) {
-                    throw err;
-                }
-                
-                console.log(`Kullanıcının (${userId}) eski kayıtları silindi`);
-                
-                // Sonra yeni kayıtları ekle
-                const insertQuery = `INSERT OR REPLACE INTO schedule (userId, rowIndex, colIndex, content, updatedAt) 
-                                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`;
-                
-                // Her bir hücre için kayıt oluştur
-                const insertPromises = [];
-                let recordCount = 0;
-                
-                Object.keys(scheduleData).forEach(rowIndex => {
-                    Object.keys(scheduleData[rowIndex]).forEach(colIndex => {
-                        const content = scheduleData[rowIndex][colIndex];
-                        recordCount++;
-                        
-                        insertPromises.push(
-                            new Promise((resolve, reject) => {
-                                db.run(insertQuery, [userId, rowIndex, colIndex, content], function(err) {
-                                    if (err) {
-                                        reject(err);
-                                    } else {
-                                        resolve();
-                                    }
+        if (isPg) {
+            deleteQuery = `DELETE FROM schedule WHERE userId = $1`;
+            deleteParams = [userId];
+        } else {
+            deleteQuery = `DELETE FROM schedule WHERE userId = ?`;
+            deleteParams = [userId];
+        }
+        
+        db.run(deleteQuery, deleteParams, function(err) {
+            if (err) {
+                console.error('Mevcut ders programı silinirken hata:', err.message);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Ders programı güncellenirken hata oluştu'
+                });
+            }
+            
+            let insertedCount = 0;
+            let totalToInsert = 0;
+            
+            // Yeni kayıtları ekle
+            let insertQuery;
+            
+            if (isPg) {
+                insertQuery = `INSERT INTO schedule (userId, rowIndex, colIndex, content, updatedAt)
+                               VALUES ($1, $2, $3, $4, $5)`;
+            } else {
+                insertQuery = `INSERT OR REPLACE INTO schedule (userId, rowIndex, colIndex, content, updatedAt)
+                               VALUES (?, ?, ?, ?, ?)`;
+            }
+            
+            // Her bir hücre için kayıt ekle
+            Object.keys(scheduleData).forEach(rowIndex => {
+                Object.keys(scheduleData[rowIndex]).forEach(colIndex => {
+                    const content = scheduleData[rowIndex][colIndex];
+                    totalToInsert++;
+                    
+                    let params;
+                    if (isPg) {
+                        params = [userId, rowIndex, colIndex, content, new Date().toISOString()];
+                    } else {
+                        params = [userId, rowIndex, colIndex, content, new Date().toISOString()];
+                    }
+                    
+                    db.run(insertQuery, params, function(err) {
+                        if (err) {
+                            console.error(`Ders programı hücresi eklenirken hata - Satır: ${rowIndex}, Sütun: ${colIndex}:`, err.message);
+                        } else {
+                            insertedCount++;
+                            
+                            // Tüm kayıtlar eklendiyse yanıt gönder
+                            if (insertedCount === totalToInsert) {
+                                console.log(`Ders programı başarıyla kaydedildi - ${insertedCount} hücre güncellendi`);
+                                res.json({
+                                    success: true,
+                                    message: `Ders programı başarıyla güncellendi (${insertedCount} hücre)`
                                 });
-                            })
-                        );
+                            }
+                        }
                     });
                 });
-                
-                // Tüm ekleme işlemlerinin tamamlanmasını bekle
-                Promise.all(insertPromises)
-                    .then(() => {
-                        db.run('COMMIT', [], () => {
-                            console.log(`${recordCount} adet ders kaydı başarıyla kaydedildi`);
-                            res.json({ 
-                                success: true, 
-                                message: 'Ders programı başarıyla kaydedildi',
-                                updatedAt: new Date().toISOString(),
-                                recordCount: recordCount
-                            });
-                        });
-                    })
-                    .catch(error => {
-                        console.error('Ders programı kaydedilirken hata:', error);
-                        db.run('ROLLBACK');
-                        throw error;
-                    });
             });
-        } catch (error) {
-            console.error('Ders programı kaydedilirken hata:', error);
-            db.run('ROLLBACK');
-            res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-    });
+            
+            // Eğer hiç hücre eklenmeyecekse yanıt gönder
+            if (totalToInsert === 0) {
+                console.log('Kaydedilecek hücre yok');
+                res.json({
+                    success: true,
+                    message: 'Ders programında değişiklik yapılmadı'
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Ders programı kaydedilirken hata:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Ders programı kaydedilirken bir hata oluştu'
+        });
+    }
 });
 
 // Ödevler için API endpoint'leri
@@ -1475,47 +1485,62 @@ db.serialize(() => {
 
 // Örnek ders programı verilerini ekleyen fonksiyon
 function addScheduleExamples() {
-  const userId = 0;
-  console.log('Ders programı için örnek veriler ekleniyor...');
-  
-  // Örnek ders programı verileri
-  const scheduleData = [
-    { row: 1, col: 1, content: "Matematik" },
-    { row: 1, col: 2, content: "Fizik" },
-    { row: 1, col: 3, content: "Kimya" },
-    { row: 1, col: 4, content: "Biyoloji" },
-    { row: 1, col: 5, content: "İngilizce" },
-    { row: 2, col: 1, content: "Tarih" },
-    { row: 2, col: 2, content: "Coğrafya" },
-    { row: 2, col: 3, content: "Edebiyat" },
-    { row: 2, col: 4, content: "Fizik Lab" },
-    { row: 2, col: 5, content: "Rehberlik" },
-    { row: 3, col: 1, content: "Matematik" },
-    { row: 3, col: 2, content: "Fizik" },
-    { row: 3, col: 3, content: "Kimya" },
-    { row: 3, col: 4, content: "Biyoloji" },
-    { row: 3, col: 5, content: "Beden Eğitimi" },
-    { row: 4, col: 1, content: "Sosyal Bilgiler" },
-    { row: 4, col: 2, content: "Fen Bilgisi" },
-    { row: 4, col: 3, content: "Müzik" },
-    { row: 4, col: 4, content: "Görsel Sanatlar" },
-    { row: 4, col: 5, content: "Bilişim Teknolojileri" }
-  ];
-  
-  // Her bir veriyi ekle
-  const stmt = db.prepare(`INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt) 
-                           VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
-  
-  scheduleData.forEach(data => {
-    stmt.run(userId, data.row, data.col, data.content, (err) => {
-      if (err) {
-        console.error('Ders programı verisi eklenirken hata:', err.message);
-      }
-    });
-  });
-  
-  stmt.finalize();
-  console.log('Ders programı için örnek veriler eklendi.');
+    console.log('Örnek ders programı kayıtları ekleniyor...');
+    
+    // Örnek veriler
+    const scheduleData = [
+        { userId: 1, rowIndex: 1, colIndex: 1, content: 'Matematik' },
+        { userId: 1, rowIndex: 1, colIndex: 2, content: 'Fizik' },
+        { userId: 1, rowIndex: 1, colIndex: 3, content: 'Kimya' },
+        { userId: 1, rowIndex: 1, colIndex: 4, content: 'Biyoloji' },
+        { userId: 1, rowIndex: 1, colIndex: 5, content: 'Matematik' },
+        { userId: 1, rowIndex: 2, colIndex: 1, content: 'Türkçe' },
+        { userId: 1, rowIndex: 2, colIndex: 2, content: 'Matematik' },
+        { userId: 1, rowIndex: 2, colIndex: 3, content: 'İngilizce' },
+        { userId: 1, rowIndex: 2, colIndex: 4, content: 'Tarih' },
+        { userId: 1, rowIndex: 2, colIndex: 5, content: 'Coğrafya' },
+        { userId: 1, rowIndex: 3, colIndex: 1, content: 'Fizik' },
+        { userId: 1, rowIndex: 3, colIndex: 2, content: 'Kimya' },
+        { userId: 1, rowIndex: 3, colIndex: 3, content: 'Matematik' },
+        { userId: 1, rowIndex: 3, colIndex: 4, content: 'Edebiyat' },
+        { userId: 1, rowIndex: 3, colIndex: 5, content: 'İngilizce' }
+    ];
+    
+    // Veri tabanı tipine göre sorgu hazırla ve çalıştır
+    if (isPg) {
+        // PostgreSQL için
+        const now = new Date().toISOString();
+        scheduleData.forEach(data => {
+            const query = `
+                INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (userId, rowIndex, colIndex) DO NOTHING
+            `;
+            const params = [data.userId, data.rowIndex, data.colIndex, data.content, now, now];
+            
+            db.run(query, params, err => {
+                if (err) {
+                    console.error('Örnek ders programı verisi eklenirken hata:', err.message);
+                }
+            });
+        });
+    } else {
+        // SQLite için
+        const stmt = db.prepare(`INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+        
+        scheduleData.forEach(data => {
+            stmt.run(data.userId, data.rowIndex, data.colIndex, data.content, err => {
+                if (err) {
+                    console.error('Örnek ders programı verisi eklenirken hata:', err.message);
+                }
+            });
+        });
+        
+        stmt.finalize();
+    }
+    
+    console.log('Örnek ders programı kayıtları eklendi');
 }
 
 // Örnek ödev verilerini ekleyen fonksiyon
