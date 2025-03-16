@@ -621,73 +621,73 @@ document.addEventListener('DOMContentLoaded', () => {
             // Kaydetmeden önce onay al
             if (!confirm('Ders programı değişikliklerini kaydetmek istiyor musunuz?')) {
                 console.log('Kullanıcı kaydetmeyi iptal etti');
-                return;
-            }
-            
+            return;
+        }
+        
             // Yükleniyor göstergesi ekle
-            const loadingNotification = document.createElement('div');
-            loadingNotification.textContent = 'Ders programı kaydediliyor...';
-            loadingNotification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: var(--accent-color); color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
-            document.body.appendChild(loadingNotification);
+        const loadingNotification = document.createElement('div');
+        loadingNotification.textContent = 'Ders programı kaydediliyor...';
+        loadingNotification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: var(--accent-color); color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
+        document.body.appendChild(loadingNotification);
+        
+        // Sunucuya veri gönder - önbellek kullanımını engelle
+        fetch(`/api/schedule/save?t=${new Date().getTime()}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            },
+            body: JSON.stringify({
+                userId: userId,
+                userType: userInfo && userInfo.userType ? userInfo.userType : "", // Kullanıcı tipini sunucuya gönder
+                data: scheduleData
+            }),
+            credentials: 'same-origin'
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            }
+            throw new Error('Ders programı kaydedilemedi');
+        })
+        .then(result => {
+            console.log('Ders programı veritabanına kaydedildi', result);
             
-            // Sunucuya veri gönder - önbellek kullanımını engelle
-            fetch(`/api/schedule/save?t=${new Date().getTime()}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0'
-                },
-                body: JSON.stringify({
-                    userId: userId,
-                    userType: userInfo && userInfo.userType ? userInfo.userType : "", // Kullanıcı tipini sunucuya gönder
-                    data: scheduleData
-                }),
-                credentials: 'same-origin'
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                }
-                throw new Error('Ders programı kaydedilemedi');
-            })
-            .then(result => {
-                console.log('Ders programı veritabanına kaydedildi', result);
-                
-                // Başarı bildirimi göster
-                loadingNotification.remove();
-                const notification = document.createElement('div');
-                notification.textContent = 'Ders programı başarıyla kaydedildi';
-                notification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: #4CAF50; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
-                document.body.appendChild(notification);
-                
-                // 3 saniye sonra bildirimi kaldır
-                setTimeout(() => {
-                    notification.style.opacity = '0';
-                    notification.style.transition = 'opacity 0.5s';
-                    setTimeout(() => notification.remove(), 500);
-                }, 3000);
-                
-                hasChanges = false; // Değişiklikler kaydedildi
-            })
-            .catch(error => {
-                console.error('Kaydetme hatası:', error);
-                
-                // Hata bildirimi göster
-                loadingNotification.remove();
-                const errorNotification = document.createElement('div');
-                errorNotification.textContent = 'Ders programı kaydedilemedi! Sunucu hatası.';
-                errorNotification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: #F44336; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
-                document.body.appendChild(errorNotification);
-                
-                // 4 saniye sonra hata bildirimini kaldır
-                setTimeout(() => {
-                    errorNotification.style.opacity = '0';
-                    errorNotification.style.transition = 'opacity 0.5s';
-                    setTimeout(() => errorNotification.remove(), 500);
-                }, 4000);
-            });
+            // Başarı bildirimi göster
+            loadingNotification.remove();
+            const notification = document.createElement('div');
+            notification.textContent = 'Ders programı başarıyla kaydedildi';
+            notification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: #4CAF50; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
+            document.body.appendChild(notification);
+            
+            // 3 saniye sonra bildirimi kaldır
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transition = 'opacity 0.5s';
+                setTimeout(() => notification.remove(), 500);
+            }, 3000);
+            
+            hasChanges = false; // Değişiklikler kaydedildi
+        })
+        .catch(error => {
+            console.error('Kaydetme hatası:', error);
+            
+            // Hata bildirimi göster
+            loadingNotification.remove();
+            const errorNotification = document.createElement('div');
+            errorNotification.textContent = 'Ders programı kaydedilemedi! Sunucu hatası.';
+            errorNotification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: #F44336; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
+            document.body.appendChild(errorNotification);
+            
+            // 4 saniye sonra hata bildirimini kaldır
+            setTimeout(() => {
+                errorNotification.style.opacity = '0';
+                errorNotification.style.transition = 'opacity 0.5s';
+                setTimeout(() => errorNotification.remove(), 500);
+            }, 4000);
+        });
         } else {
             console.log('Sadece yöneticiler ders programını kaydedebilir.');
             
@@ -2153,10 +2153,10 @@ document.addEventListener('DOMContentLoaded', () => {
             let formattedDate = "Belirtilmemiş";
             if (!isNaN(examDate.getTime())) {
                 formattedDate = examDate.toLocaleDateString('tr-TR', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric'
-                });
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
             }
             document.getElementById('deleteGradeDate').textContent = formattedDate;
             
@@ -2380,7 +2380,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const addGradeForm = document.getElementById('addGradeForm');
         if (addGradeForm) {
             addGradeForm.addEventListener('submit', function(e) {
-                e.preventDefault();
+                    e.preventDefault();
                 addNewGrade();
             });
         }
@@ -2404,10 +2404,10 @@ document.addEventListener('DOMContentLoaded', () => {
             userManagementButton.style.display = 'flex'; // Göster
             
             // Kullanıcı yönetimi modalını açma
-            userManagementButton.addEventListener('click', function() {
-                openModal(userManagementModal);
-                fetchUsers();
-            });
+        userManagementButton.addEventListener('click', function() {
+            openModal(userManagementModal);
+            fetchUsers();
+        });
         } else {
             userManagementButton.style.display = 'none'; // Gizle
         }
@@ -2604,6 +2604,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const password = document.getElementById('addUserPassword').value;
         const userType = document.getElementById('addUserType').value;
         
+        // Form alanlarını kontrol et
+        if (!name || !username || !password || !userType) {
+            showNotification('Tüm alanlar doldurulmalıdır.', 'error');
+            return;
+        }
+        
         const userData = {
             name,
             username,
@@ -2611,15 +2617,23 @@ document.addEventListener('DOMContentLoaded', () => {
             userType
         };
         
-        fetch('/api/users', {
+        console.log('Kullanıcı ekleme verileri:', userData);
+        
+        // Doğru endpoint'i kullan: /api/register
+        fetch('/api/register', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(userData)
         })
-            .then(response => response.json())
+            .then(response => {
+                console.log('Sunucu yanıtı status:', response.status);
+                return response.json();
+            })
             .then(data => {
+                console.log('Sunucu yanıtı:', data);
+                
                 if (data.success) {
                     showNotification('Kullanıcı başarıyla eklendi.', 'success');
                     closeModal(addUserModal);
@@ -2627,12 +2641,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     fetchUsers();
                     resetUserForm();
                 } else {
-                    console.error('Kullanıcı eklenirken hata oluştu:', data.message);
-                    showNotification(`Kullanıcı eklenirken bir hata oluştu: ${data.message}`, 'error');
+                    const errorMessage = data.message || data.error || 'Bilinmeyen hata';
+                    console.error('Kullanıcı eklenirken hata oluştu:', errorMessage);
+                    showNotification(`Kullanıcı eklenirken bir hata oluştu: ${errorMessage}`, 'error');
                 }
             })
             .catch(error => {
-                console.error('Kullanıcı eklenirken hata oluştu:', error);
+                console.error('Kullanıcı eklenirken ağ hatası oluştu:', error);
                 showNotification('Kullanıcı eklenirken bir hata oluştu.', 'error');
             });
     }

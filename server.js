@@ -803,12 +803,19 @@ app.post('/api/login', (req, res) => {
 
 // 2. Kullanıcı kayıt endpoint'i
 app.post('/api/register', (req, res) => {
-    const { username, password, userType } = req.body;
-    // Kullanıcı adı otomatik olarak isim kısmıda kullanılabilir
-    const name = username;
+    const { name, username, password, userType } = req.body;
+    
+    console.log('Yeni kullanıcı kayıt isteği alındı:', { name, username, userType });
+
+    // İsim yoksa kullanıcı adını kullan
+    const userName = name || username;
 
     if (!username || !password || !userType) {
-        return res.status(400).json({ error: 'Kullanıcı adı, şifre ve kullanıcı tipi gereklidir' });
+        console.log('Eksik bilgilerle kullanıcı kayıt girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Kullanıcı adı, şifre ve kullanıcı tipi gereklidir' 
+        });
     }
     
     // Kullanıcı tipi kontrolü
@@ -830,7 +837,7 @@ app.post('/api/register', (req, res) => {
         
         // Kullanıcıyı ekle
         db.run(`INSERT INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`, 
-          [name, username, password, userType], 
+          [userName, username, password, userType], 
           function(err) {
             if (err) {
               console.error('Kullanıcı eklenirken hata:', err.message);
