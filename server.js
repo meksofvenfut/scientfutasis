@@ -116,6 +116,35 @@ app.use(cors({
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// Hata ayıklama ve hata mesajı yazdırma yardımcı fonksiyonu
+function debugLog(title, ...args) {
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    console.log(`[${timeStr}] ${title}:`, ...args);
+}
+
+// API route hatalarını kontrol eden middleware
+app.use('/api', (req, res, next) => {
+    debugLog('API isteği', req.method, req.path);
+    next();
+});
+
+// Genel hata yakalama middleware'i
+app.use((err, req, res, next) => {
+    debugLog('Hata yakalandı', err);
+    
+    if (!res.headersSent) {
+        res.status(500).json({
+            success: false, 
+            error: 'Sunucu hatası',
+            message: err.message,
+            code: err.code
+        });
+    }
+    
+    next(err);
+});
+
 // API istekleri için önbellek engelleyici middleware
 app.use('/api', (req, res, next) => {
     // Her API isteği için önbellek başlıklarını ayarla
@@ -793,12 +822,12 @@ app.get('/api/users/list', (req, res) => {
 // 1. Ders programını getir
 app.get('/api/schedule/get', (req, res) => {
     try {
-        console.log('Ders programı getirme isteği alındı');
+        debugLog('Ders programı getirme isteği alındı');
         // Varsayılan olarak kullanıcı 1 (genel program)
         const userId = req.query.userId || 1;
         
         // API isteğini loglama
-        console.log(`Ders programı getiriliyor - Kullanıcı ID: ${userId}`);
+        debugLog(`Ders programı getiriliyor - Kullanıcı ID: ${userId}`);
         
         // Sorguyu hazırla
         let query, params;
@@ -811,12 +840,12 @@ app.get('/api/schedule/get', (req, res) => {
             params = [userId];
         }
         
-        console.log('Sorgu çalıştırılıyor:', query, 'Parametreler:', params);
+        debugLog('Sorgu çalıştırılıyor:', query, 'Parametreler:', params);
         
         // Sorguyu çalıştır
         db.all(query, params, (err, rows) => {
             if (err) {
-                console.error('Ders programı verileri alınırken hata:', err);
+                debugLog('Ders programı verileri alınırken hata:', err);
                 return res.status(500).json({
                     success: false,
                     error: 'Veritabanı hatası',
@@ -824,7 +853,7 @@ app.get('/api/schedule/get', (req, res) => {
                 });
             }
             
-            console.log(`${rows?.length || 0} adet kayıt bulundu`);
+            debugLog(`${rows?.length || 0} adet kayıt bulundu`);
             
             // Veriyi formatla (key formatını değiştiriyorum)
             const scheduleData = {};
@@ -832,6 +861,8 @@ app.get('/api/schedule/get', (req, res) => {
             if (rows && rows.length > 0) {
                 rows.forEach(row => {
                     // PostgreSQL'de sütun isimleri küçük harfle dönebilir, bu yüzden kontrol ediyoruz
+                    debugLog('Satır verisi:', JSON.stringify(row));
+                    
                     const rowIndex = row.rowIndex || row.rowindex || row["rowIndex"] || row["rowindex"];
                     const colIndex = row.colIndex || row.colindex || row["colIndex"] || row["colindex"];
                     
@@ -841,13 +872,13 @@ app.get('/api/schedule/get', (req, res) => {
                         // Veriyi doğrudan bu key altına yerleştir
                         scheduleData[cellKey] = row.content;
                     } else {
-                        console.error('Hatalı veri formatı:', row);
+                        debugLog('Hatalı veri formatı:', row);
                     }
                 });
             }
             
             // Log ekleyelim
-            console.log('Formatlanmış ders programı verileri:', scheduleData);
+            debugLog('Formatlanmış ders programı verileri:', scheduleData);
             
             // Başarılı yanıt
             return res.json({
@@ -857,7 +888,7 @@ app.get('/api/schedule/get', (req, res) => {
             });
         });
     } catch (error) {
-        console.error('Ders programı getirme hatası:', error);
+        debugLog('Ders programı getirme hatası:', error);
         return res.status(500).json({
             success: false,
             error: 'Sunucu hatası',
@@ -1986,6 +2017,19 @@ app.get('/api/grades/get', (req, res) => {
 
 // Frontend dosyalarını servis et - tüm rotalar için catch-all
 app.get('*', (req, res) => {
+    // Eğer bir API isteği gelirse ve aslında API yok ise, JSON hata döndür
+    if (req.path.startsWith('/api/')) {
+        console.log(`Bulunamayan API endpoint'i çağrıldı: ${req.path}`);
+        return res.status(404).json({
+            success: false,
+            error: 'API endpoint bulunamadı',
+            requested_endpoint: req.path
+        });
+    }
+    
+    // Frontend için index.html dosyasını gönder
+    console.log(`Frontend istendi: ${req.path}`);
+    res.set('Content-Type', 'text/html');
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
