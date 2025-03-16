@@ -2038,3 +2038,79 @@ app.listen(PORT, () => {
     console.log(`Server ${PORT} portunda çalışıyor...`);
     console.log(`http://localhost:${PORT} adresinden erişebilirsiniz`);
 });
+
+// Kullanıcı tipini güncelleme API endpoint'i
+app.post('/api/users/update', (req, res) => {
+    console.log('Kullanıcı tipi güncelleme isteği alındı:', req.body);
+    const { username, userType } = req.body;
+    
+    if (!username || !userType) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Kullanıcı adı ve kullanıcı tipi gereklidir' 
+        });
+    }
+    
+    // Geçerli kullanıcı tiplerini kontrol et
+    const validUserTypes = ['admin', 'teacher', 'student'];
+    if (!validUserTypes.includes(userType)) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Geçersiz kullanıcı tipi. Kullanıcı tipi admin, teacher veya student olmalıdır.' 
+        });
+    }
+    
+    try {
+        // Kullanıcıyı bul ve güncelle
+        let query, params;
+        
+        if (isPg) {
+            query = `UPDATE users SET userType = $1 WHERE username = $2 RETURNING id, username, userType`;
+            params = [userType, username];
+        } else {
+            query = `UPDATE users SET userType = ? WHERE username = ?`;
+            params = [userType, username];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Kullanıcı güncellenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (this.changes === 0) {
+                console.log(`Güncellenecek kullanıcı bulunamadı: ${username}`);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Kullanıcı bulunamadı' 
+                });
+            }
+            
+            console.log(`Kullanıcı tipi güncellendi: ${username} -> ${userType}`);
+            
+            // Başarılı yanıt
+            db.get(`SELECT id, username, userType FROM users WHERE username = ?`, [username], (err, user) => {
+                if (err) {
+                    console.error('Kullanıcı bilgileri alınırken hata:', err.message);
+                }
+                
+                res.json({ 
+                    success: true, 
+                    message: `Kullanıcı tipi başarıyla güncellendi: ${userType}`,
+                    user: user || { username, userType }
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Kullanıcı tipi güncelleme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
