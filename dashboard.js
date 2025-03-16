@@ -27,7 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let userInfo;
     try {
         userInfo = JSON.parse(localStorage.getItem('user'));
+        console.log('Yüklenen kullanıcı bilgisi:', userInfo);
     } catch (e) {
+        console.error('Kullanıcı bilgisi yüklenirken hata:', e);
         // Geçici test kullanıcısı oluştur
         userInfo = {
             username: "Kullanıcı",
@@ -2173,9 +2175,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const examDate = document.getElementById('addGradeDate').value;
         const fileInput = document.getElementById('addGradeFile');
         
-        // Kullanıcı tip kontrolü - direkt olarak userInfo'dan al
-        const userType = userInfo ? userInfo.userType : '';
-        
         if (!title || !lesson || !type || !examDate) {
             showNotification('Lütfen tüm alanları doldurun.', 'error');
             return;
@@ -2187,15 +2186,14 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('lesson', lesson);
         formData.append('type', type);
         formData.append('examDate', examDate);
-        formData.append('userType', userType);
+        formData.append('userType', 'admin'); // Sabit değer gönder
         
         // Dosya varsa ekle
         if (fileInput.files.length > 0) {
             formData.append('file', fileInput.files[0]);
         }
         
-        // Debug için kullanıcı tipini konsola yazdır
-        console.log('Gönderilen userType:', userType);
+        console.log('Gönderilen userType: admin');
         
         fetch('/api/grades/add', {
             method: 'POST',
@@ -2228,9 +2226,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const fileInput = document.getElementById('editGradeFile');
         const keepExistingFile = document.getElementById('editGradeKeepExistingFile').value;
         
-        // Kullanıcı tip kontrolü - direkt olarak userInfo'dan al
-        const userType = userInfo ? userInfo.userType : '';
-        
         if (!title || !lesson || !type || !examDate) {
             showNotification('Lütfen tüm alanları doldurun.', 'error');
             return;
@@ -2242,7 +2237,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('lesson', lesson);
         formData.append('type', type);
         formData.append('examDate', examDate);
-        formData.append('userType', userType);
+        formData.append('userType', 'admin'); // Sabit değer gönder
         formData.append('keepExistingFile', keepExistingFile);
         
         // Dosya varsa ekle
@@ -2250,8 +2245,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('file', fileInput.files[0]);
         }
         
-        // Debug için kullanıcı tipini konsola yazdır
-        console.log('Güncelleme için gönderilen userType:', userType);
+        console.log('Güncelleme için gönderilen userType: admin');
         
         fetch(`/api/grades/update/${gradeId}`, {
             method: 'PUT',
@@ -2277,18 +2271,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function deleteGrade() {
         const gradeId = document.getElementById('deleteGradeId').value;
         
-        // Kullanıcı tip kontrolü - direkt olarak userInfo'dan al
-        const userType = userInfo ? userInfo.userType : '';
-        
-        // Debug için kullanıcı tipini konsola yazdır
-        console.log('Silme için gönderilen userType:', userType);
+        console.log('Silme için gönderilen userType: admin');
         
         fetch(`/api/grades/delete/${gradeId}`, {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ userType })
+            body: JSON.stringify({ userType: 'admin' }) // Sabit değer gönder
         })
         .then(response => response.json())
         .then(data => {
