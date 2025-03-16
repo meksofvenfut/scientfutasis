@@ -2798,7 +2798,6 @@ app.put('/api/users/:id', (req, res) => {
             
             // Kullanıcıyı güncelleme işlemi
             function updateUser() {
-                const now = new Date().toISOString();
                 let query, params;
                 
                 // Eğer şifre de değiştirilmek isteniyorsa
@@ -2806,34 +2805,34 @@ app.put('/api/users/:id', (req, res) => {
                     if (isPg) {
                         query = `
                             UPDATE users 
-                            SET name = $1, username = $2, password = $3, "usertype" = $4, "updatedAt" = $5
-                            WHERE id = $6
+                            SET name = $1, username = $2, password = $3, "usertype" = $4
+                            WHERE id = $5
                         `;
-                        params = [name, username, password, userType, now, userId];
+                        params = [name, username, password, userType, userId];
                     } else {
                         query = `
                             UPDATE users 
-                            SET name = ?, username = ?, password = ?, userType = ?, updatedAt = ?
+                            SET name = ?, username = ?, password = ?, userType = ?
                             WHERE id = ?
                         `;
-                        params = [name, username, password, userType, now, userId];
+                        params = [name, username, password, userType, userId];
                     }
                 } else {
                     // Şifre değiştirilmiyorsa
                     if (isPg) {
                         query = `
                             UPDATE users 
-                            SET name = $1, username = $2, "usertype" = $3, "updatedAt" = $4
-                            WHERE id = $5
+                            SET name = $1, username = $2, "usertype" = $3
+                            WHERE id = $4
                         `;
-                        params = [name, username, userType, now, userId];
+                        params = [name, username, userType, userId];
                     } else {
                         query = `
                             UPDATE users 
-                            SET name = ?, username = ?, userType = ?, updatedAt = ?
+                            SET name = ?, username = ?, userType = ?
                             WHERE id = ?
                         `;
-                        params = [name, username, userType, now, userId];
+                        params = [name, username, userType, userId];
                     }
                 }
                 
