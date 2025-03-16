@@ -944,16 +944,10 @@ html[data-theme="dark"] .schedule-table tr:hover td {
 
 /* Başlık ve ilk sütun için sticky pozisyonlama */
 .schedule-table th:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 20; /* En üst katmanda olması için yüksek z-index */
     background-color: rgba(var(--accent-color-rgb), 0.05);
 }
 
 .schedule-table td:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 15; /* Diğer içerikten üstte ama başlıktan altta */
     background-color: rgba(var(--accent-color-rgb), 0.05);
     text-align: center !important;
     font-weight: 500;
@@ -996,23 +990,16 @@ html[data-theme="dark"] .schedule-table tr:hover td {
         -webkit-overflow-scrolling: touch; /* iOS için daha akıcı kaydırma */
     }
     
-    /* Mobilde ilk sütunun arkaplana sahip olmasını sağla */
+    /* Mobilde ilk sütunun arka plan rengi */
     .schedule-table th:first-child,
     .schedule-table td:first-child {
         background-color: rgba(var(--accent-color-rgb), 0.1);
     }
     
-    /* Diğer hücreler scroll edildiğinde ilk sütunun gizlenmemesi için */
+    /* Gölge efektini kaldırıyoruz */
     .schedule-table th:first-child::after,
     .schedule-table td:first-child::after {
-        content: "";
-        position: absolute;
-        top: 0;
-        right: 0;
-        bottom: 0;
-        width: 4px;
-        background: linear-gradient(to right, rgba(0,0,0,0.1), transparent);
-        pointer-events: none;
+        display: none;
     }
     
     .modal-content {
