@@ -691,15 +691,18 @@ app.post('/api/login', (req, res) => {
         
         // Kullanıcıyı veritabanında kontrol et
         const query = isPg ? 
-            `SELECT id, name, username, userType, "userType" as usertype FROM users WHERE username = $1 AND password = $2` :
+            `SELECT id, name, username, "userType" FROM users WHERE username = $1 AND password = $2` :
             `SELECT id, name, username, userType FROM users WHERE username = ? AND password = ?`;
         
         const params = isPg ? [username, encodedPassword] : [username, encodedPassword];
         
+        console.log("Sorgu çalıştırılıyor:", query);
+        console.log("Parametreler:", params);
+        
         db.get(query, params, (err, row) => {
             if (err) {
-                console.error('Veritabanı hatası:', err.message);
-                return res.status(500).json({ success: false, message: 'Sunucu hatası' });
+                console.error('Veritabanı hatası:', err.message, err.stack);
+                return res.status(500).json({ success: false, message: 'Sunucu hatası', details: err.message });
             }
             
             if (!row) {
@@ -707,11 +710,15 @@ app.post('/api/login', (req, res) => {
                 return res.status(401).json({ success: false, message: 'Kullanıcı adı veya şifre yanlış' });
             }
             
-            console.log('Kullanıcı başarıyla giriş yaptı:', row);
-            console.log('UserType değerleri:', row.userType, row.usertype);
+            console.log('Kullanıcı bulundu:', row);
             
             // Kullanıcı türünü kontrol et - PostgreSQL büyük/küçük harf duyarlılığı
-            let userTypeValue = row.userType || row.usertype || '';
+            let userTypeValue = row.userType || '';
+            
+            // PostgreSQL'de sütun adları küçük harfle döner
+            if (row.usertype) userTypeValue = row.usertype;
+            
+            console.log('Orijinal userType değeri:', userTypeValue);
             userTypeValue = userTypeValue.toLowerCase();
             
             // Admin kontrolü yapılıyor
@@ -727,6 +734,8 @@ app.post('/api/login', (req, res) => {
                 { expiresIn: '1h' }
             );
             
+            console.log('Token oluşturuldu, kullanıcı bilgileri gönderiliyor');
+            
             res.json({
                 success: true,
                 user: {
@@ -740,7 +749,7 @@ app.post('/api/login', (req, res) => {
             
             // Kullanıcı login zamanını güncelle
             const loginTimeUpdateQuery = isPg ? 
-                `UPDATE users SET lastLogin = $1 WHERE id = $2` :
+                `UPDATE users SET "lastLogin" = $1 WHERE id = $2` :
                 `UPDATE users SET lastLogin = ? WHERE id = ?`;
             
             const loginTimeParams = isPg ? [new Date().toISOString(), row.id] : [new Date().toISOString(), row.id];
@@ -751,7 +760,7 @@ app.post('/api/login', (req, res) => {
             });
         });
     } catch (error) {
-        console.error('Login işleminde hata:', error);
+        console.error('Login işleminde hata:', error.message, error.stack);
         res.status(500).json({ success: false, message: 'Sunucu hatası', error: error.message });
     }
 });
@@ -936,7 +945,7 @@ app.post('/api/schedule/save', (req, res) => {
         let deleteParams;
         
         if (isPg) {
-            deleteQuery = `DELETE FROM schedule WHERE userId = $1`;
+            deleteQuery = `DELETE FROM schedule WHERE "userId" = $1`;
             deleteParams = [userId];
         } else {
             deleteQuery = `DELETE FROM schedule WHERE userId = ?`;
@@ -948,7 +957,8 @@ app.post('/api/schedule/save', (req, res) => {
                 console.error('Mevcut kayıtları silerken hata:', err.message);
                 return res.status(500).json({
                     success: false,
-                    error: 'Veritabanı hatası'
+                    error: 'Veritabanı hatası',
+                    details: err.message
                 });
             }
             
@@ -985,8 +995,10 @@ app.post('/api/schedule/save', (req, res) => {
                 
                 if (isPg) {
                     insertQuery = `
-                        INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                        INSERT INTO schedule ("userId", "rowIndex", "colIndex", content, "createdAt", "updatedAt")
                         VALUES ($1, $2, $3, $4, $5, $6)
+                        ON CONFLICT ("userId", "rowIndex", "colIndex") 
+                        DO UPDATE SET content = $4, "updatedAt" = $6
                     `;
                     insertParams = [userId, rowIndex, colIndex, content, now, now];
                 } else {
