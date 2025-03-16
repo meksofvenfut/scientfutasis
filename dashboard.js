@@ -2441,12 +2441,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const editUserForm = document.getElementById('editUserForm');
     const deleteUserBtn = document.getElementById('deleteUserBtn');
     
-    // Kullanıcı yönetimi modalını açma
+    // Kullanıcı yönetimi butonunu sadece yönetici (admin) kullanıcı tipinde göster
     if (userManagementButton) {
-        userManagementButton.addEventListener('click', function() {
-            openModal(userManagementModal);
-            fetchUsers();
-        });
+        // Yönetici kullanıcı tipi kontrol: hem 'admin' hem de 'Yönetici' değerlerini kabul et
+        if (userInfo && (userInfo.userType === 'admin' || userInfo.userType === 'Yönetici')) {
+            userManagementButton.style.display = 'flex'; // Göster
+            
+            // Kullanıcı yönetimi modalını açma
+            userManagementButton.addEventListener('click', function() {
+                openModal(userManagementModal);
+                fetchUsers();
+            });
+        } else {
+            userManagementButton.style.display = 'none'; // Gizle
+        }
     }
     
     // Yeni kullanıcı ekleme modalını açma
