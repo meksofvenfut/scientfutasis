@@ -2240,7 +2240,11 @@ app.post('/api/grades/add', (req, res) => {
         const examDate = req.body.examDate || req.query.examDate || new Date().toISOString().split('T')[0];
         const userType = req.body.userType || req.query.userType;
         
-        console.log('İşlenmiş parametreler:', { title, lesson, type, examDate, userType });
+        // Benzersiz anahtar hatalarını önlemek için her seferinde rasgele bir son ek ekle
+        const uniqueSuffix = Date.now().toString().slice(-6);
+        const uniqueTitle = `${title}_${uniqueSuffix}`;
+        
+        console.log('İşlenmiş parametreler:', { title: uniqueTitle, lesson, type, examDate, userType });
         
         const file = req.file; // Eğer dosya yüklendiyse
         
@@ -2285,13 +2289,13 @@ app.post('/api/grades/add', (req, res) => {
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
             `;
-            params = [title, lesson, type, examDate, filePath, fileName, fileSize, now, now];
+            params = [uniqueTitle, lesson, type, examDate, filePath, fileName, fileSize, now, now];
         } else {
             query = `
                 INSERT INTO grades (title, lesson, type, examDate, file_path, file_name, file_size, createdAt, updatedAt)
                 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             `;
-            params = [title, lesson, type, examDate, filePath, fileName, fileSize];
+            params = [uniqueTitle, lesson, type, examDate, filePath, fileName, fileSize];
         }
         
         db.run(query, params, function(err) {
@@ -2304,15 +2308,158 @@ app.post('/api/grades/add', (req, res) => {
                 });
             }
             
-            console.log(`Yeni sınav notu eklendi: ${title} - ID: ${this.lastID || 'unknown'}`);
+            console.log(`Yeni sınav notu eklendi: ${uniqueTitle} - ID: ${this.lastID || 'unknown'}`);
             res.json({ 
                 success: true, 
                 message: 'Sınav notu başarıyla eklendi', 
-                id: this.lastID 
+                id: this.lastID,
+                title: uniqueTitle,
+                lesson: lesson,
+                type: type,
+                examDate: examDate
             });
         });
     } catch (error) {
         console.error('Sınav notu ekleme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 3. Sınav notu güncelleme
+app.put('/api/grades/update/:id', (req, res) => {
+    try {
+        const gradeId = req.params.id;
+        console.log('Sınav notu güncelleme isteği alındı:', gradeId);
+        
+        // Parametreleri hem body hem de query'den al
+        const title = req.body.title || req.query.title;
+        const lesson = req.body.lesson || req.query.lesson;
+        const type = req.body.type || req.query.type;
+        const examDate = req.body.examDate || req.query.examDate;
+        const userType = req.body.userType || req.query.userType;
+        
+        console.log('Güncelleme için gönderilen userType:', userType);
+        
+        // Gerekli alanların kontrolü
+        if (!gradeId || !title || !lesson) {
+            console.error('Eksik bilgi ile sınav notu güncelleme girişimi');
+            return res.status(400).json({ 
+                success: false, 
+                message: 'ID, başlık ve ders gereklidir' 
+            });
+        }
+        
+        const now = new Date().toISOString();
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                UPDATE grades 
+                SET title = $1, lesson = $2, type = $3, "examDate" = $4, "updatedAt" = $5
+                WHERE id = $6
+                RETURNING id
+            `;
+            params = [title, lesson, type, examDate, now, gradeId];
+        } else {
+            query = `
+                UPDATE grades 
+                SET title = ?, lesson = ?, type = ?, examDate = ?, updatedAt = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            params = [title, lesson, type, examDate, gradeId];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Sınav notu güncellenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (this.changes === 0) {
+                console.log(`Güncellenecek sınav notu bulunamadı - ID: ${gradeId}`);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Güncellenecek sınav notu bulunamadı' 
+                });
+            }
+            
+            console.log(`Sınav notu güncellendi - ID: ${gradeId}`);
+            res.json({ 
+                success: true, 
+                message: 'Sınav notu başarıyla güncellendi', 
+                id: gradeId 
+            });
+        });
+    } catch (error) {
+        console.error('Sınav notu güncelleme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 4. Sınav notu silme
+app.delete('/api/grades/delete/:id', (req, res) => {
+    try {
+        const gradeId = req.params.id;
+        console.log('Sınav notu silme isteği alındı:', gradeId);
+        
+        const userType = req.body.userType || req.query.userType;
+        console.log('Silme için gönderilen userType:', userType);
+        
+        if (!gradeId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Silinecek sınav notu ID\'si gereklidir' 
+            });
+        }
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `DELETE FROM grades WHERE id = $1`;
+            params = [gradeId];
+        } else {
+            query = `DELETE FROM grades WHERE id = ?`;
+            params = [gradeId];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Sınav notu silinirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (this.changes === 0) {
+                console.log(`Silinecek sınav notu bulunamadı - ID: ${gradeId}`);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Silinecek sınav notu bulunamadı' 
+                });
+            }
+            
+            console.log(`Sınav notu silindi - ID: ${gradeId}`);
+            res.json({ 
+                success: true, 
+                message: 'Sınav notu başarıyla silindi'
+            });
+        });
+    } catch (error) {
+        console.error('Sınav notu silme hatası:', error);
         res.status(500).json({ 
             success: false, 
             message: 'Sunucu hatası', 
