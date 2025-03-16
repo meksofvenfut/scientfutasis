@@ -285,9 +285,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row = cell.getAttribute('data-row');
                 const col = cell.getAttribute('data-col');
                 
-                if (scheduleData[row] && scheduleData[row][col]) {
-                    cell.textContent = scheduleData[row][col];
+                // Yeni format: "row_col" formatında key kullanıyor
+                const cellKey = `${row}_${col}`;
+                const content = scheduleData[cellKey];
+                
+                if (content) {
+                    cell.textContent = content;
+                    cell.classList.add('has-content');
                 } else {
+                    cell.textContent = '';
+                    cell.classList.remove('has-content');
                     console.log(`Veri yok: row=${row}, col=${col}`);
                 }
             });
@@ -340,12 +347,13 @@ document.addEventListener('DOMContentLoaded', () => {
         editableCells.forEach(cell => {
             const row = cell.getAttribute('data-row');
             const col = cell.getAttribute('data-col');
+            const content = cell.textContent.trim();
             
-            if (!scheduleData[row]) {
-                scheduleData[row] = {};
+            if (content) {
+                // Yeni format: "row_col" formatında key kullanıyor
+                const cellKey = `${row}_${col}`;
+                scheduleData[cellKey] = content;
             }
-            
-            scheduleData[row][col] = cell.textContent;
         });
         
         console.log('Ders programı tablodaki değerlerden yüklendi:', scheduleData);
@@ -600,7 +608,85 @@ document.addEventListener('DOMContentLoaded', () => {
     // Ders programını sunucuya kaydet
     function saveSchedule() {
         // Sadece yöneticiler kaydedebilir
-        if (!isAdmin) {
+        if (userInfo && (userInfo.userType === 'admin' || userInfo.userType === 'Yönetici')) {
+            
+            // Veriyi tablodan topla
+            collectDataFromTable();
+            
+            // Global ders programı için sabit userId kullan
+            let userId = 1; // Global program
+            
+            // Kaydetmeden önce onay al
+            if (!confirm('Ders programı değişikliklerini kaydetmek istiyor musunuz?')) {
+                console.log('Kullanıcı kaydetmeyi iptal etti');
+                return;
+            }
+            
+            // Yükleniyor göstergesi ekle
+            const loadingNotification = document.createElement('div');
+            loadingNotification.textContent = 'Ders programı kaydediliyor...';
+            loadingNotification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: var(--accent-color); color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
+            document.body.appendChild(loadingNotification);
+            
+            // Sunucuya veri gönder - önbellek kullanımını engelle
+            fetch(`/api/schedule/save?t=${new Date().getTime()}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                },
+                body: JSON.stringify({
+                    userId: userId,
+                    userType: userInfo && userInfo.userType ? userInfo.userType : "", // Kullanıcı tipini sunucuya gönder
+                    data: scheduleData
+                }),
+                credentials: 'same-origin'
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                }
+                throw new Error('Ders programı kaydedilemedi');
+            })
+            .then(result => {
+                console.log('Ders programı veritabanına kaydedildi', result);
+                
+                // Başarı bildirimi göster
+                loadingNotification.remove();
+                const notification = document.createElement('div');
+                notification.textContent = 'Ders programı başarıyla kaydedildi';
+                notification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: #4CAF50; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
+                document.body.appendChild(notification);
+                
+                // 3 saniye sonra bildirimi kaldır
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    notification.style.transition = 'opacity 0.5s';
+                    setTimeout(() => notification.remove(), 500);
+                }, 3000);
+                
+                hasChanges = false; // Değişiklikler kaydedildi
+            })
+            .catch(error => {
+                console.error('Kaydetme hatası:', error);
+                
+                // Hata bildirimi göster
+                loadingNotification.remove();
+                const errorNotification = document.createElement('div');
+                errorNotification.textContent = 'Ders programı kaydedilemedi! Sunucu hatası.';
+                errorNotification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: #F44336; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
+                document.body.appendChild(errorNotification);
+                
+                // 4 saniye sonra hata bildirimini kaldır
+                setTimeout(() => {
+                    errorNotification.style.opacity = '0';
+                    errorNotification.style.transition = 'opacity 0.5s';
+                    setTimeout(() => errorNotification.remove(), 500);
+                }, 4000);
+            });
+        } else {
             console.log('Sadece yöneticiler ders programını kaydedebilir.');
             
             // Kullanıcıya bildirim göster
@@ -618,76 +704,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return;
         }
-        
-        console.log('Kaydedilen ders programı:', scheduleData);
-        
-        // Global ders programı için sabit userId kullan
-        let userId = 0; // Global program
-        
-        // Yükleniyor bildirimi göster
-        const loadingNotification = document.createElement('div');
-        loadingNotification.textContent = 'Ders programı kaydediliyor...';
-        loadingNotification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: var(--accent-color); color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
-        document.body.appendChild(loadingNotification);
-        
-        // Sunucuya veri gönder - önbellek kullanımını engelle
-        fetch(`/api/schedule/save?t=${new Date().getTime()}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0'
-            },
-            body: JSON.stringify({
-                userId: userId,
-                userType: userInfo && userInfo.userType ? userInfo.userType : "", // Kullanıcı tipini sunucuya gönder
-                data: scheduleData
-            }),
-            credentials: 'same-origin'
-        })
-        .then(response => {
-            if (response.ok) {
-                return response.json();
-            }
-            throw new Error('Ders programı kaydedilemedi');
-        })
-        .then(result => {
-            console.log('Ders programı veritabanına kaydedildi', result);
-            
-            // Başarı bildirimi göster
-            loadingNotification.remove();
-            const notification = document.createElement('div');
-            notification.textContent = 'Ders programı başarıyla kaydedildi';
-            notification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: #4CAF50; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
-            document.body.appendChild(notification);
-            
-            // 3 saniye sonra bildirimi kaldır
-            setTimeout(() => {
-                notification.style.opacity = '0';
-                notification.style.transition = 'opacity 0.5s';
-                setTimeout(() => notification.remove(), 500);
-            }, 3000);
-            
-            hasChanges = false; // Değişiklikler kaydedildi
-        })
-        .catch(error => {
-            console.error('Kaydetme hatası:', error);
-            
-            // Hata bildirimi göster
-            loadingNotification.remove();
-            const errorNotification = document.createElement('div');
-            errorNotification.textContent = 'Ders programı kaydedilemedi! Sunucu hatası.';
-            errorNotification.style.cssText = 'position: fixed; bottom: 70px; right: 20px; background-color: #F44336; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
-            document.body.appendChild(errorNotification);
-            
-            // 4 saniye sonra hata bildirimini kaldır
-            setTimeout(() => {
-                errorNotification.style.opacity = '0';
-                errorNotification.style.transition = 'opacity 0.5s';
-                setTimeout(() => errorNotification.remove(), 500);
-            }, 4000);
-        });
     }
     
     // Ödevler için fonksiyonlar
@@ -2756,4 +2772,60 @@ document.addEventListener('DOMContentLoaded', () => {
     // Global fonksiyonları tanımla
     window.editUserItem = editUserItem;
     window.deleteUserItem = deleteUserItem;
+
+    // Ders programı verilerini güncelle
+    function updateScheduleDisplay() {
+        let hasData = false; // Veri olup olmadığını takip et
+        
+        // Tüm hücreleri al
+        editableCells.forEach(cell => {
+            const row = cell.dataset.row;
+            const col = cell.dataset.col;
+            
+            // Veri formatına göre düzelt: "row_col" formatını kullan
+            const cellKey = `${row}_${col}`;
+            const content = scheduleData[cellKey];
+            
+            if (content) {
+                cell.textContent = content;
+                cell.classList.add('has-content');
+                hasData = true; // Veri var
+            } else {
+                cell.textContent = '';
+                cell.classList.remove('has-content');
+                console.log(`Veri yok: row=${row}, col=${col}`);
+            }
+        });
+        
+        console.log('Veri var mı?', hasData);
+        
+        // Eğer uyarı mesajı gösterilecekse, hasData kontrol et
+        if (!hasData) {
+            const noDataWarning = document.querySelector('.no-data-warning');
+            if (noDataWarning) noDataWarning.style.display = 'block';
+        } else {
+            const noDataWarning = document.querySelector('.no-data-warning');
+            if (noDataWarning) noDataWarning.style.display = 'none';
+        }
+    }
+
+    // Tablodan veri toplayıp scheduleData'yı güncelle
+    function collectDataFromTable() {
+        scheduleData = {};
+        
+        editableCells.forEach(cell => {
+            const row = cell.getAttribute('data-row');
+            const col = cell.getAttribute('data-col');
+            const content = cell.textContent.trim();
+            
+            if (content) {
+                // Yeni format: "row_col" formatında key kullanıyor
+                const cellKey = `${row}_${col}`;
+                scheduleData[cellKey] = content;
+            }
+        });
+        
+        console.log('Ders programı verileri tablodaki değerlerden toplandı:', scheduleData);
+        return scheduleData;
+    }
 }); 

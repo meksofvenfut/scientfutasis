@@ -648,7 +648,7 @@ function getTurkishTimeString() {
 // 1. Giriş (login) endpoint'i
 app.post('/api/login', (req, res) => {
     console.log('Login isteği alındı:', req.body);
-    const { username, password } = req.body;
+    const { username, password, userType } = req.body;
     
     if (!username || !password) {
         console.error('Eksik bilgi: kullanıcı adı veya şifre eksik');
@@ -680,9 +680,16 @@ app.post('/api/login', (req, res) => {
             console.log('Kullanıcı başarıyla giriş yaptı:', row);
             console.log('User type:', row.userType);
             
+            // Kullanıcı türünü kontrol et - 'admin' değeri yoksa ve Türkçe 'Yönetici' varsa, 'admin' olarak ayarla
+            let userTypeValue = row.userType;
+            if (userTypeValue === 'Yönetici') {
+                userTypeValue = 'admin';
+                console.log('Türkçe "Yönetici" değeri "admin" olarak güncellendi');
+            }
+            
             // JWT token oluştur
             const token = jwt.sign(
-                { id: row.id, username: row.username, userType: row.userType },
+                { id: row.id, username: row.username, userType: userTypeValue },
                 JWT_SECRET,
                 { expiresIn: '1h' }
             );
@@ -693,7 +700,7 @@ app.post('/api/login', (req, res) => {
                     id: row.id,
                     name: row.name,
                     username: row.username,
-                    userType: row.userType
+                    userType: userTypeValue
                 },
                 token: token
             });
@@ -817,17 +824,20 @@ app.get('/api/schedule/get', (req, res) => {
             
             console.log(`${rows?.length || 0} adet kayıt bulundu`);
             
-            // Veriyi formatla
+            // Veriyi formatla (key formatını değiştiriyorum)
             const scheduleData = {};
             
             if (rows && rows.length > 0) {
                 rows.forEach(row => {
-                    if (!scheduleData[row.rowIndex]) {
-                        scheduleData[row.rowIndex] = {};
-                    }
-                    scheduleData[row.rowIndex][row.colIndex] = row.content;
+                    // Her hücre için benzersiz bir key oluştur: {rowIndex}_{colIndex}
+                    const cellKey = `${row.rowIndex}_${row.colIndex}`;
+                    // Veriyi doğrudan bu key altına yerleştir
+                    scheduleData[cellKey] = row.content;
                 });
             }
+            
+            // Log ekleyelim
+            console.log('Formatlanmış ders programı verileri:', scheduleData);
             
             // Başarılı yanıt
             return res.json({
@@ -837,10 +847,11 @@ app.get('/api/schedule/get', (req, res) => {
             });
         });
     } catch (error) {
-        console.error('Ders programı getirme istisna hatası:', error);
+        console.error('Ders programı getirme hatası:', error);
         return res.status(500).json({
             success: false,
-            error: 'Sunucu hatası'
+            error: 'Sunucu hatası',
+            details: error.message
         });
     }
 });
@@ -878,73 +889,85 @@ app.post('/api/schedule/save', (req, res) => {
         
         db.run(deleteQuery, deleteParams, function(err) {
             if (err) {
-                console.error('Mevcut ders programı silinirken hata:', err.message);
+                console.error('Mevcut kayıtları silerken hata:', err.message);
                 return res.status(500).json({
                     success: false,
-                    message: 'Ders programı güncellenirken hata oluştu'
+                    error: 'Veritabanı hatası'
                 });
             }
             
-            let insertedCount = 0;
-            let totalToInsert = 0;
+            console.log(`${userId} kullanıcısının ders programı kayıtları silindi`);
             
-            // Yeni kayıtları ekle
-            let insertQuery;
-            
-            if (isPg) {
-                insertQuery = `INSERT INTO schedule (userId, rowIndex, colIndex, content, updatedAt)
-                               VALUES ($1, $2, $3, $4, $5)`;
-            } else {
-                insertQuery = `INSERT OR REPLACE INTO schedule (userId, rowIndex, colIndex, content, updatedAt)
-                               VALUES (?, ?, ?, ?, ?)`;
+            // Key'lere göre işlem yapıyoruz
+            const keys = Object.keys(scheduleData);
+            if (keys.length === 0) {
+                return res.json({
+                    success: true,
+                    message: 'Ders programı güncellendi (boş)'
+                });
             }
             
-            // Her bir hücre için kayıt ekle
-            Object.keys(scheduleData).forEach(rowIndex => {
-                Object.keys(scheduleData[rowIndex]).forEach(colIndex => {
-                    const content = scheduleData[rowIndex][colIndex];
-                    totalToInsert++;
-                    
-                    let params;
-                    if (isPg) {
-                        params = [userId, rowIndex, colIndex, content, new Date().toISOString()];
+            let insertCount = 0;
+            let errorCount = 0;
+            
+            // Her key için veri ekle - key formatı "rowIndex_colIndex"
+            keys.forEach(key => {
+                // Key'i parse ederek rowIndex ve colIndex elde et
+                const [rowIndex, colIndex] = key.split('_').map(Number);
+                
+                if (!rowIndex || !colIndex) {
+                    console.error(`Geçersiz key formatı: ${key}`);
+                    errorCount++;
+                    return;
+                }
+                
+                const content = scheduleData[key];
+                
+                // Veri ekle
+                let insertQuery, insertParams;
+                const now = new Date().toISOString();
+                
+                if (isPg) {
+                    insertQuery = `
+                        INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                    `;
+                    insertParams = [userId, rowIndex, colIndex, content, now, now];
+                } else {
+                    insertQuery = `
+                        INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    `;
+                    insertParams = [userId, rowIndex, colIndex, content];
+                }
+                
+                db.run(insertQuery, insertParams, function(err) {
+                    if (err) {
+                        console.error(`Kayıt eklenirken hata (${rowIndex}, ${colIndex}): ${err.message}`);
+                        errorCount++;
                     } else {
-                        params = [userId, rowIndex, colIndex, content, new Date().toISOString()];
+                        insertCount++;
+                        console.log(`Kayıt eklendi (${rowIndex}, ${colIndex}): ${content}`);
                     }
                     
-                    db.run(insertQuery, params, function(err) {
-                        if (err) {
-                            console.error(`Ders programı hücresi eklenirken hata - Satır: ${rowIndex}, Sütun: ${colIndex}:`, err.message);
-                        } else {
-                            insertedCount++;
-                            
-                            // Tüm kayıtlar eklendiyse yanıt gönder
-                            if (insertedCount === totalToInsert) {
-                                console.log(`Ders programı başarıyla kaydedildi - ${insertedCount} hücre güncellendi`);
-                                res.json({
-                                    success: true,
-                                    message: `Ders programı başarıyla güncellendi (${insertedCount} hücre)`
-                                });
-                            }
-                        }
-                    });
+                    // Tüm işlemler tamamlandı mı kontrol et
+                    if (insertCount + errorCount === keys.length) {
+                        return res.json({
+                            success: true,
+                            message: `Ders programı güncellendi. ${insertCount} kayıt eklendi, ${errorCount} hata.`,
+                            insertCount,
+                            errorCount
+                        });
+                    }
                 });
             });
-            
-            // Eğer hiç hücre eklenmeyecekse yanıt gönder
-            if (totalToInsert === 0) {
-                console.log('Kaydedilecek hücre yok');
-                res.json({
-                    success: true,
-                    message: 'Ders programında değişiklik yapılmadı'
-                });
-            }
         });
     } catch (error) {
-        console.error('Ders programı kaydedilirken hata:', error);
-        res.status(500).json({
+        console.error('Ders programı kayıt hatası:', error);
+        return res.status(500).json({
             success: false,
-            message: 'Ders programı kaydedilirken bir hata oluştu'
+            message: 'Sunucu hatası',
+            error: error.message
         });
     }
 });
@@ -967,1375 +990,28 @@ app.get('/api/homework/get', (req, res) => {
 
 // 2. Yeni ödev ekle
 app.post('/api/homework/add', (req, res) => {
-    const { title, lesson, dueDate, description } = req.body;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler ödev ekleyebilir
-    if (userType !== 'admin') {
-        console.log('Yetkisiz erişim - Sadece yöneticiler ödev ekleyebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler ödev ekleyebilir!'
-        });
-    }
-    
-    // Veri validasyonu yap
-    if (!lesson || !dueDate || !description) {
-        console.log('Geçersiz ödev verisi:', req.body);
-        return res.status(400).json({ error: 'Ders, teslim tarihi ve açıklama zorunludur!' });
-    }
-    
-    // Eğer title yoksa lesson değerini kullan
-    const homeworkTitle = title || lesson;
-    
-    const query = `
-        INSERT INTO homework (title, lesson, dueDate, description, isCompleted) 
-        VALUES (?, ?, ?, ?, 0)
-    `;
-    
-    db.run(query, [homeworkTitle, lesson, dueDate, description], function(err) {
-        if (err) {
-            console.error('Ödev eklenirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        const homeworkId = this.lastID;
-        console.log(`Yeni ödev eklendi. ID: ${homeworkId}, Zaman: ${getTurkishTimeString()}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Ödev başarıyla eklendi',
-            homeworkId: homeworkId
-        });
-    });
-});
-
-// 3. Ödev güncelle
-app.put('/api/homework/update/:id', (req, res) => {
-    const homeworkId = req.params.id;
-    const { title, lesson, dueDate, description } = req.body;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler ödev güncelleyebilir
-    if (userType !== 'admin') {
-        console.log('Yetkisiz erişim - Sadece yöneticiler ödev güncelleyebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler ödev güncelleyebilir!'
-        });
-    }
-    
-    // Veri validasyonu yap
-    if (!lesson || !dueDate || !description) {
-        console.log('Geçersiz ödev verisi:', req.body);
-        return res.status(400).json({ error: 'Ders, teslim tarihi ve açıklama zorunludur!' });
-    }
-    
-    // Eğer title yoksa lesson değerini kullan
-    const homeworkTitle = title || lesson;
-    
-    const query = `
-        UPDATE homework 
-        SET title = ?, lesson = ?, dueDate = ?, description = ?, updatedAt = CURRENT_TIMESTAMP
-        WHERE id = ?
-    `;
-    
-    db.run(query, [homeworkTitle, lesson, dueDate, description, homeworkId], function(err) {
-        if (err) {
-            console.error('Ödev güncellenirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        if (this.changes === 0) {
-            return res.status(404).json({ error: 'Ödev bulunamadı' });
-        }
-        
-        console.log(`Ödev güncellendi. ID: ${homeworkId}, Zaman: ${getTurkishTimeString()}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Ödev başarıyla güncellendi',
-            homeworkId: homeworkId
-        });
-    });
-});
-
-// 4. Ödev sil
-app.delete('/api/homework/delete/:id', (req, res) => {
-    const { id } = req.params;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler ödev silebilir
-    if (userType !== 'admin') {
-        console.log('Yetkisiz erişim - Sadece yöneticiler ödev silebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler ödev silebilir!'
-        });
-    }
-    
-    const query = `DELETE FROM homework WHERE id = ?`;
-    
-    db.run(query, [id], function(err) {
-        if (err) {
-            console.error('Ödev silinirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        if (this.changes === 0) {
-            return res.status(404).json({ error: 'Ödev bulunamadı' });
-        }
-        
-        console.log(`Ödev silindi. ID: ${id}, Zaman: ${getTurkishTimeString()}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Ödev başarıyla silindi',
-            id: id
-        });
-    });
-});
-
-// Duyurular için API endpoint'leri
-// 1. Tüm duyuruları getir
-app.get('/api/announcements/get', (req, res) => {
-    const query = `SELECT * FROM announcements ORDER BY createdAt DESC`;
-    
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error('Duyuru verileri çekilirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        console.log(`${rows.length} adet duyuru kaydı bulundu.`);
-        res.json(rows);
-    });
-});
-
-// 2. Yeni duyuru ekle
-app.post('/api/announcements/add', (req, res) => {
-    const { title, content, importance } = req.body;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler duyuru ekleyebilir
-    if (userType !== 'admin') {
-        console.log('Yetkisiz erişim - Sadece yöneticiler duyuru ekleyebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler duyuru ekleyebilir!'
-        });
-    }
-    
-    // Veri validasyonu yap
-    if (!title || !content) {
-        console.log('Geçersiz duyuru verisi:', req.body);
-        return res.status(400).json({ error: 'Başlık ve içerik zorunludur!' });
-    }
-    
-    // Geriye uyumluluk için
-    const important = importance === 'important' || importance === 'critical' ? 1 : 0;
-    const timestamp = getCurrentTimestamp();
-    
-    const query = `
-        INSERT INTO announcements (title, content, importance, important, createdAt, updatedAt) 
-        VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    
-    db.run(query, [title, content, importance, important, timestamp, timestamp], function(err) {
-        if (err) {
-            console.error('Duyuru eklenirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        const announcementId = this.lastID;
-        console.log(`Yeni duyuru eklendi. ID: ${announcementId}, Zaman: ${getTurkishTimeString()}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Duyuru başarıyla eklendi',
-            announcementId: announcementId
-        });
-    });
-});
-
-// 3. Duyuru güncelle
-app.put('/api/announcements/update/:id', (req, res) => {
-    const announcementId = req.params.id;
-    const { title, content, importance } = req.body;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler duyuru güncelleyebilir
-    if (userType !== 'admin') {
-        console.log('Yetkisiz erişim - Sadece yöneticiler duyuru güncelleyebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler duyuru güncelleyebilir!'
-        });
-    }
-    
-    // Veri validasyonu yap
-    if (!title || !content) {
-        console.log('Geçersiz duyuru verisi:', req.body);
-        return res.status(400).json({ error: 'Başlık ve içerik zorunludur!' });
-    }
-    
-    // Geriye uyumluluk için
-    const important = importance === 'important' || importance === 'critical' ? 1 : 0;
-    const timestamp = getCurrentTimestamp();
-    
-    const query = `
-        UPDATE announcements 
-        SET title = ?, content = ?, importance = ?, important = ?, updatedAt = ?
-        WHERE id = ?
-    `;
-    
-    db.run(query, [title, content, importance, important, timestamp, announcementId], function(err) {
-        if (err) {
-            console.error('Duyuru güncellenirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        if (this.changes === 0) {
-            return res.status(404).json({ error: 'Duyuru bulunamadı' });
-        }
-        
-        console.log(`Duyuru güncellendi. ID: ${announcementId}, Zaman: ${getTurkishTimeString()}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Duyuru başarıyla güncellendi',
-            announcementId: announcementId
-        });
-    });
-});
-
-// 4. Duyuru sil
-app.delete('/api/announcements/delete/:id', (req, res) => {
-    const { id } = req.params;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler duyuru silebilir
-    if (userType !== 'admin') {
-        console.log('Yetkisiz erişim - Sadece yöneticiler duyuru silebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler duyuru silebilir!'
-        });
-    }
-    
-    const query = `DELETE FROM announcements WHERE id = ?`;
-    
-    db.run(query, [id], function(err) {
-        if (err) {
-            console.error('Duyuru silinirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        if (this.changes === 0) {
-            return res.status(404).json({ error: 'Duyuru bulunamadı' });
-        }
-        
-        console.log(`Duyuru silindi. ID: ${id}, Zaman: ${getTurkishTimeString()}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Duyuru başarıyla silindi',
-            id: id
-        });
-    });
-});
-
-// Sınav notları için API endpoint'leri
-// 1. Tüm sınav notlarını getir
-app.get('/api/grades/get', (req, res) => {
-    const query = `SELECT * FROM grades ORDER BY examDate DESC, lesson ASC, title ASC`;
-    
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error('Çalışma notları çekilirken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        console.log(`${rows.length} adet çalışma notu bulundu. Zaman: ${getTurkishTimeString()}`);
-        res.json(rows);
-    });
-});
-
-// 2. Yeni sınav notu ekle (dosya yükleme desteği ile)
-app.post('/api/grades/add', upload.single('file'), (req, res) => {
-    const { title, lesson, type, examDate } = req.body;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler çalışma notu ekleyebilir
-    if (userType !== 'admin') {
-        // Dosya yüklendiyse sil
-        if (req.file) {
-            fs.unlink(req.file.path, (err) => {
-                if (err) console.error('Dosya silinirken hata:', err);
-            });
-        }
-        
-        console.log('Yetkisiz erişim - Sadece yöneticiler çalışma notu ekleyebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler çalışma notu ekleyebilir!'
-        });
-    }
-    
-    // Veri validasyonu yap
-    if (!title || !lesson || !type || !examDate) {
-        // Dosya yüklendiyse sil
-        if (req.file) {
-            fs.unlink(req.file.path, (err) => {
-                if (err) console.error('Dosya silinirken hata:', err);
-            });
-        }
-        
-        console.log('Geçersiz çalışma notu verisi:', req.body);
-        return res.status(400).json({ error: 'Not başlığı, ders, not türü ve tarih zorunludur!' });
-    }
-    
-    const timestamp = getCurrentTimestamp();
-    
-    // Dosya bilgileri
-    const filePath = req.file ? req.file.path.replace(/\\/g, '/') : null;
-    const fileName = req.file ? req.file.originalname : null;
-    const fileSize = req.file ? req.file.size : null;
-    
-    const query = `
-        INSERT INTO grades (title, lesson, type, file_path, file_name, file_size, examDate, createdAt, updatedAt) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    
-    db.run(query, [title, lesson, type, filePath, fileName, fileSize, examDate, timestamp, timestamp], function(err) {
-        if (err) {
-            console.error('Çalışma notu eklenirken hata:', err);
-            
-            // Dosya yüklendiyse sil
-            if (req.file) {
-                fs.unlink(req.file.path, (err) => {
-                    if (err) console.error('Dosya silinirken hata:', err);
-                });
-            }
-            
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        const gradeId = this.lastID;
-        console.log(`Yeni çalışma notu eklendi. ID: ${gradeId}, Zaman: ${getTurkishTimeString()}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Çalışma notu başarıyla eklendi',
-            gradeId: gradeId,
-            hasFile: !!req.file
-        });
-    });
-});
-
-// 3. Sınav notu güncelle (dosya yükleme desteği ile)
-app.put('/api/grades/update/:id', upload.single('file'), (req, res) => {
-    const gradeId = req.params.id;
-    const { title, lesson, type, examDate, keepExistingFile } = req.body;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler çalışma notu güncelleyebilir
-    if (userType !== 'admin') {
-        // Dosya yüklendiyse sil
-        if (req.file) {
-            fs.unlink(req.file.path, (err) => {
-                if (err) console.error('Dosya silinirken hata:', err);
-            });
-        }
-        
-        console.log('Yetkisiz erişim - Sadece yöneticiler çalışma notu güncelleyebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler çalışma notu güncelleyebilir!'
-        });
-    }
-    
-    // Veri validasyonu yap
-    if (!title || !lesson || !type || !examDate) {
-        // Dosya yüklendiyse sil
-        if (req.file) {
-            fs.unlink(req.file.path, (err) => {
-                if (err) console.error('Dosya silinirken hata:', err);
-            });
-        }
-        
-        console.log('Geçersiz çalışma notu verisi:', req.body);
-        return res.status(400).json({ error: 'Not başlığı, ders, not türü ve tarih zorunludur!' });
-    }
-    
-    // Mevcut dosya yolunu al (varsa dosya silinecek)
-    db.get(`SELECT file_path FROM grades WHERE id = ?`, [gradeId], (err, row) => {
-        if (err) {
-            console.error('Dosya bilgisi alınırken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        const timestamp = getCurrentTimestamp();
-        let query, params;
-        
-        // Yeni dosya yüklendi mi?
-        if (req.file) {
-            // Yeni dosya yüklendi, eskisini sil ve yenisini güncelle
-            const filePath = req.file.path.replace(/\\/g, '/');
-            const fileName = req.file.originalname;
-            const fileSize = req.file.size;
-            
-            query = `
-                UPDATE grades 
-                SET title = ?, lesson = ?, type = ?, file_path = ?, file_name = ?, file_size = ?, examDate = ?, updatedAt = ?
-                WHERE id = ?
-            `;
-            params = [title, lesson, type, filePath, fileName, fileSize, examDate, timestamp, gradeId];
-            
-            // Eğer önceki dosya varsa ve korunması istenmiyorsa sil
-            if (row && row.file_path && keepExistingFile !== 'true') {
-                fs.unlink(row.file_path, (err) => {
-                    if (err) console.error('Önceki dosya silinirken hata:', err);
-                });
-            }
-        } else if (keepExistingFile === 'false' && row && row.file_path) {
-            // Dosya yüklenmedi ve mevcut dosyanın silinmesi istendi
-            query = `
-                UPDATE grades 
-                SET title = ?, lesson = ?, type = ?, file_path = NULL, file_name = NULL, file_size = NULL, examDate = ?, updatedAt = ?
-                WHERE id = ?
-            `;
-            params = [title, lesson, type, examDate, timestamp, gradeId];
-            
-            // Mevcut dosyayı sil
-            fs.unlink(row.file_path, (err) => {
-                if (err) console.error('Mevcut dosya silinirken hata:', err);
-            });
-        } else {
-            // Dosya yüklenmedi, dosya bilgilerini değiştirme
-            query = `
-                UPDATE grades 
-                SET title = ?, lesson = ?, type = ?, examDate = ?, updatedAt = ?
-                WHERE id = ?
-            `;
-            params = [title, lesson, type, examDate, timestamp, gradeId];
-        }
-        
-        db.run(query, params, function(err) {
-            if (err) {
-                console.error('Çalışma notu güncellenirken hata:', err);
-                
-                // Eğer yeni dosya yüklendiyse ama veritabanı hatası olduysa dosyayı sil
-                if (req.file) {
-                    fs.unlink(req.file.path, (err) => {
-                        if (err) console.error('Dosya silinirken hata:', err);
-                    });
-                }
-                
-                return res.status(500).json({ error: 'Veritabanı hatası' });
-            }
-            
-            if (this.changes === 0) {
-                // İlgili çalışma notu bulunamadıysa ve dosya yüklendiyse dosyayı sil
-                if (req.file) {
-                    fs.unlink(req.file.path, (err) => {
-                        if (err) console.error('Dosya silinirken hata:', err);
-                    });
-                }
-                
-                return res.status(404).json({ error: 'Çalışma notu bulunamadı' });
-            }
-            
-            console.log(`Çalışma notu güncellendi. ID: ${gradeId}, Zaman: ${getTurkishTimeString()}`);
-            
-            res.json({ 
-                success: true, 
-                message: 'Çalışma notu başarıyla güncellendi',
-                gradeId: gradeId,
-                hasNewFile: !!req.file
-            });
-        });
-    });
-});
-
-// 4. Sınav notu sil (dosya temizleme ile)
-app.delete('/api/grades/delete/:id', (req, res) => {
-    const { id } = req.params;
-    const userType = req.body.userType;
-    
-    // Sadece yöneticiler çalışma notu silebilir
-    if (userType !== 'admin') {
-        console.log('Yetkisiz erişim - Sadece yöneticiler çalışma notu silebilir!');
-        return res.status(403).json({ 
-            error: 'Yetkisiz erişim. Sadece yöneticiler çalışma notu silebilir!'
-        });
-    }
-    
-    // Önce dosya yolunu al
-    db.get(`SELECT file_path FROM grades WHERE id = ?`, [id], (err, row) => {
-        if (err) {
-            console.error('Dosya bilgisi alınırken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        const query = `DELETE FROM grades WHERE id = ?`;
-        
-        db.run(query, [id], function(err) {
-            if (err) {
-                console.error('Çalışma notu silinirken hata:', err);
-                return res.status(500).json({ error: 'Veritabanı hatası' });
-            }
-            
-            if (this.changes === 0) {
-                return res.status(404).json({ error: 'Çalışma notu bulunamadı' });
-            }
-            
-            // Eğer dosya varsa, sil
-            if (row && row.file_path) {
-                fs.unlink(row.file_path, (err) => {
-                    if (err) console.error('Dosya silinirken hata:', err);
-                });
-            }
-            
-            console.log(`Çalışma notu silindi. ID: ${id}, Zaman: ${getTurkishTimeString()}`);
-            
-            res.json({ 
-                success: true, 
-                message: 'Çalışma notu başarıyla silindi',
-                id: id
-            });
-        });
-    });
-});
-
-// Dosya indirme endpoint'i
-app.get('/api/grades/download/:id', (req, res) => {
-    const gradeId = req.params.id;
-    
-    db.get(`SELECT file_path, file_name FROM grades WHERE id = ?`, [gradeId], (err, row) => {
-        if (err) {
-            console.error('Dosya bilgisi alınırken hata:', err);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-        
-        if (!row || !row.file_path || !row.file_name) {
-            return res.status(404).json({ error: 'Dosya bulunamadı' });
-        }
-        
-        const filePath = row.file_path;
-        const fileName = row.file_name;
-        
-        // Dosya var mı kontrol et
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ error: 'Dosya disk üzerinde bulunamadı' });
-        }
-        
-        // Dosyayı indir
-        res.download(filePath, fileName, (err) => {
-            if (err) {
-                console.error('Dosya indirme hatası:', err);
-                return res.status(500).json({ error: 'Dosya indirme hatası' });
-            }
-        });
-    });
-});
-
-// Ders programı için örnek veriler ekleme (veritabanı boşsa)
-db.serialize(() => {
-  // Veritabanında kayıt var mı kontrol et
-  let tablesWithDataCount = 0;
-  
-  // Ders programı kontrolü
-  db.get("SELECT COUNT(*) as count FROM schedule", [], (err, row) => {
-    if (!err && row.count === 0) {
-      // Ders programı için örnek veri ekle
-      addScheduleExamples();
-    } else {
-      console.log("Ders programında zaten veri bulunuyor, örnek veriler eklenmeyecek.");
-    }
-  });
-  
-  // Ödevler kontrolü
-  db.get("SELECT COUNT(*) as count FROM homework", [], (err, row) => {
-    if (!err && row.count === 0) {
-      // Ödevler için örnek veri ekle
-      addHomeworkExamples();
-    } else {
-      console.log("Ödevlerde zaten veri bulunuyor, örnek veriler eklenmeyecek.");
-    }
-  });
-  
-  // Duyurular kontrolü
-  db.get("SELECT COUNT(*) as count FROM announcements", [], (err, row) => {
-    if (!err && row.count === 0) {
-      // Duyurular için örnek veri ekle
-      addAnnouncementExamples();
-    } else {
-      console.log("Duyurularda zaten veri bulunuyor, örnek veriler eklenmeyecek.");
-    }
-  });
-  
-  // Sınav çalışma notları kontrolü
-  db.get("SELECT COUNT(*) as count FROM grades", [], (err, row) => {
-    if (!err && row.count === 0) {
-      // Sınav çalışma notları için örnek veri ekle
-      addGradeExamples();
-    } else {
-      console.log("Sınav çalışma notlarında zaten veri bulunuyor, örnek veriler eklenmeyecek.");
-    }
-  });
-});
-
-// Örnek ders programı verilerini ekleyen fonksiyon
-function addScheduleExamples() {
-    console.log('Örnek ders programı kayıtları ekleniyor...');
-    
-    // Örnek veriler
-    const scheduleData = [
-        { userId: 1, rowIndex: 1, colIndex: 1, content: 'Matematik' },
-        { userId: 1, rowIndex: 1, colIndex: 2, content: 'Fizik' },
-        { userId: 1, rowIndex: 1, colIndex: 3, content: 'Kimya' },
-        { userId: 1, rowIndex: 1, colIndex: 4, content: 'Biyoloji' },
-        { userId: 1, rowIndex: 1, colIndex: 5, content: 'Matematik' },
-        { userId: 1, rowIndex: 2, colIndex: 1, content: 'Türkçe' },
-        { userId: 1, rowIndex: 2, colIndex: 2, content: 'Matematik' },
-        { userId: 1, rowIndex: 2, colIndex: 3, content: 'İngilizce' },
-        { userId: 1, rowIndex: 2, colIndex: 4, content: 'Tarih' },
-        { userId: 1, rowIndex: 2, colIndex: 5, content: 'Coğrafya' },
-        { userId: 1, rowIndex: 3, colIndex: 1, content: 'Fizik' },
-        { userId: 1, rowIndex: 3, colIndex: 2, content: 'Kimya' },
-        { userId: 1, rowIndex: 3, colIndex: 3, content: 'Matematik' },
-        { userId: 1, rowIndex: 3, colIndex: 4, content: 'Edebiyat' },
-        { userId: 1, rowIndex: 3, colIndex: 5, content: 'İngilizce' }
-    ];
-    
-    // Veri tabanı tipine göre sorgu hazırla ve çalıştır
-    if (isPg) {
-        // PostgreSQL için
-        // Önce mevcut verileri temizleyelim
-        db.run(`DELETE FROM schedule WHERE userId = 1`, [], function(err) {
-            if (err) {
-                console.error('Schedule verileri temizlenirken hata:', err.message);
+                console.error('Kullanıcı tipleri kontrolü hatası:', err.message);
             } else {
-                console.log('Schedule verileri temizlendi, yeni kayıtlar ekleniyor');
-                
-                // Şimdi yeni kayıtları ekleyelim
-                const now = new Date().toISOString();
-                let insertedCount = 0;
-                
-                scheduleData.forEach(data => {
-                    const query = `
-                        INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
-                        VALUES ($1, $2, $3, $4, $5, $6)
-                    `;
-                    const params = [data.userId, data.rowIndex, data.colIndex, data.content, now, now];
+                console.log('Mevcut kullanıcılar ve tipleri:');
+                rows.forEach(user => {
+                    console.log(`- ${user.username}: ${user.userType}`);
                     
-                    db.run(query, params, err => {
-                        if (err) {
-                            console.error('Örnek ders programı verisi eklenirken hata:', err.message);
-                        } else {
-                            insertedCount++;
-                            console.log(`Schedule kaydı eklendi: ${insertedCount}/${scheduleData.length}`);
-                        }
-                    });
-                });
-            }
-        });
-    } else {
-        // SQLite için
-        // Önce mevcut verileri temizleyelim
-        db.run(`DELETE FROM schedule WHERE userId = 1`, [], function(err) {
-            if (err) {
-                console.error('Schedule verileri temizlenirken hata:', err.message);
-            } else {
-                console.log('Schedule verileri temizlendi, yeni kayıtlar ekleniyor');
-                
-                // Şimdi yeni kayıtları ekleyelim
-                const stmt = db.prepare(`INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
-                                   VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
-                
-                scheduleData.forEach(data => {
-                    stmt.run(data.userId, data.rowIndex, data.colIndex, data.content, err => {
-                        if (err) {
-                            console.error('Örnek ders programı verisi eklenirken hata:', err.message);
-                        }
-                    });
-                });
-                
-                stmt.finalize();
-                console.log('Örnek ders programı kayıtları eklendi');
-            }
-        });
-    }
-}
-
-// Örnek ödev verilerini ekleyen fonksiyon
-function addHomeworkExamples() {
-  console.log('Ödevler için örnek veriler ekleniyor...');
-  
-  // Örnek ödevler
-  const homeworkData = [
-    { title: "Matematik Türev Soruları", lesson: "Matematik", dueDate: "2025-03-20", description: "Sayfa 45-50 arası tüm türev sorularını çöz." },
-    { title: "Fizik Elektrik Konusu", lesson: "Fizik", dueDate: "2025-03-22", description: "Elektrik konusu ile ilgili verilen problemlerin çözümünü tamamla." },
-    { title: "Kimya Formüller", lesson: "Kimya", dueDate: "2025-03-25", description: "Organik kimya formüllerini ezberle ve test çöz." },
-    { title: "İngilizce Ödev", lesson: "İngilizce", dueDate: "2025-03-18", description: "Verilen paragraflardaki boşlukları uygun kelimelerle doldur." },
-    { title: "Tarih Araştırma", lesson: "Tarih", dueDate: "2025-03-30", description: "Osmanlı Devleti'nin kuruluşu hakkında kapsamlı bir araştırma yap." }
-  ];
-  
-  // Her bir ödevi ekle
-  const stmt = db.prepare(`INSERT INTO homework (title, lesson, dueDate, description, isCompleted, createdAt, updatedAt) 
-                           VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
-  
-  homeworkData.forEach(data => {
-    stmt.run(data.title, data.lesson, data.dueDate, data.description, (err) => {
-      if (err) {
-        console.error('Ödev verisi eklenirken hata:', err.message);
-      }
-    });
-  });
-  
-  stmt.finalize();
-  console.log('Ödevler için örnek veriler eklendi.');
-}
-
-// Örnek duyuru verilerini ekleyen fonksiyon
-function addAnnouncementExamples() {
-  console.log('Duyurular için örnek veriler ekleniyor...');
-  
-  // Örnek duyurular
-  const announcementData = [
-    { title: "Öğrenci Toplantısı", content: "Yarın saat 14:00'da tüm öğrencilerin katılımıyla bir toplantı yapılacaktır.", importance: "important" },
-    { title: "Sınav Tarihleri", content: "Dönem sonu sınavları 10-20 Nisan tarihleri arasında yapılacaktır. Detaylı program ekte sunulmuştur.", importance: "critical" },
-    { title: "Kütüphane Çalışma Saatleri", content: "Kütüphane çalışma saatleri hafta içi 08:00-20:00, hafta sonu 10:00-18:00 olarak güncellenmiştir.", importance: "normal" },
-    { title: "Proje Teslim Tarihi", content: "Dönem projelerinin son teslim tarihi 5 Nisan'dır. Geç teslimler kabul edilmeyecektir.", importance: "important" },
-    { title: "Spor Salonu Kullanımı", content: "Spor salonu tadilatı nedeniyle 1 hafta boyunca kapalı olacaktır.", importance: "normal" }
-  ];
-  
-  const timestamp = getCurrentTimestamp();
-  
-  // Her bir duyuruyu ekle
-  const stmt = db.prepare(`INSERT INTO announcements (title, content, importance, important, createdAt, updatedAt) 
-                           VALUES (?, ?, ?, ?, ?, ?)`);
-  
-  announcementData.forEach(data => {
-    const important = data.importance === 'important' || data.importance === 'critical' ? 1 : 0;
-    stmt.run(data.title, data.content, data.importance, important, timestamp, timestamp, (err) => {
-      if (err) {
-        console.error('Duyuru verisi eklenirken hata:', err.message);
-      }
-    });
-  });
-  
-  stmt.finalize();
-  console.log('Duyurular için örnek veriler eklendi.');
-}
-
-// Örnek sınav çalışma notları verilerini ekleyen fonksiyon
-function addGradeExamples() {
-  console.log('Sınav çalışma notları için örnek veriler ekleniyor...');
-  
-  // Örnek sınav çalışma notları - Dosya olmadan
-  const gradesData = [
-    { title: "Türev Formülleri", lesson: "Matematik", type: "Konu Özeti", examDate: "2025-04-10" },
-    { title: "Elektrik Konusu", lesson: "Fizik", type: "Soru Bankası", examDate: "2025-04-12" },
-    { title: "Organik Kimya", lesson: "Kimya", type: "Yazılı Hazırlık", examDate: "2025-04-15" },
-    { title: "İngilizce Kelimeler", lesson: "İngilizce", type: "Kelime Listesi", examDate: "2025-04-08" },
-    { title: "Osmanlı Tarihi", lesson: "Tarih", type: "Dönem Öncesi Tekrar", examDate: "2025-04-20" }
-  ];
-  
-  const timestamp = getCurrentTimestamp();
-  
-  // Her bir sınav çalışma notunu ekle
-  const stmt = db.prepare(`INSERT INTO grades (title, lesson, type, examDate, createdAt, updatedAt) 
-                           VALUES (?, ?, ?, ?, ?, ?)`);
-  
-  gradesData.forEach(data => {
-    stmt.run(data.title, data.lesson, data.type, data.examDate, timestamp, timestamp, (err) => {
-      if (err) {
-        console.error('Sınav çalışma notu eklenirken hata:', err.message);
-      }
-    });
-  });
-  
-  stmt.finalize();
-  console.log('Sınav çalışma notları için örnek veriler eklendi.');
-}
-
-// Tek kullanıcı bilgisi
-app.get('/api/users/:id', (req, res) => {
-    const userId = req.params.id;
-    console.log(`Kullanıcı bilgisi çekiliyor (ID: ${userId}) - Zaman: ${getTurkishTimeString()}`);
-    
-    db.get(`SELECT id, name, username, userType, lastLogin FROM users WHERE id = ?`, [userId], (err, row) => {
-        if (err) {
-            console.error('Kullanıcı bilgisi çekilirken hata:', err.message);
-            return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-        }
-        
-        if (!row) {
-            return res.status(404).json({ success: false, message: 'Kullanıcı bulunamadı' });
-        }
-        
-        res.json({ success: true, user: row });
-    });
-});
-
-// Kullanıcı ekleme
-app.post('/api/users', (req, res) => {
-    const { name, username, password, userType } = req.body;
-    console.log(`Yeni kullanıcı ekleniyor (${username}) - Zaman: ${getTurkishTimeString()}`);
-    
-    // Tüm gerekli alanların kontrolü
-    if (!name || !username || !password || !userType) {
-        return res.status(400).json({ success: false, message: 'Tüm alanları doldurun' });
-    }
-    
-    // Kullanıcı tipi kontrolü
-    const allowedTypes = ['admin', 'teacher', 'student'];
-    if (!allowedTypes.includes(userType)) {
-        return res.status(400).json({ success: false, message: 'Geçerli bir kullanıcı tipi seçin' });
-    }
-    
-    // Kullanıcı adının benzersiz olup olmadığını kontrol et
-    db.get(`SELECT * FROM users WHERE username = ?`, [username], (err, row) => {
-        if (err) {
-            console.error('Kullanıcı kontrolü yapılırken hata:', err.message);
-            return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-        }
-        
-        if (row) {
-            return res.status(400).json({ success: false, message: 'Bu kullanıcı adı başka bir kullanıcı tarafından kullanılıyor' });
-        }
-        
-        // Şifreleme yapalım
-        const hashedPassword = Buffer.from(password).toString('base64');
-        
-        // Kullanıcıyı ekle
-        db.run(`INSERT INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`, 
-            [name, username, hashedPassword, userType], 
-            function(err) {
-                if (err) {
-                    console.error('Kullanıcı eklenirken hata:', err.message);
-                    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-                }
-                
-                console.log(`Yeni kullanıcı eklendi. ID: ${this.lastID}, Zaman: ${getTurkishTimeString()}`);
-                
-                res.status(201).json({ 
-                    success: true, 
-                    message: 'Kullanıcı başarıyla eklendi',
-                    userId: this.lastID 
-                });
-            });
-    });
-});
-
-// Kullanıcı güncelleme
-app.put('/api/users/:id', (req, res) => {
-    const userId = req.params.id;
-    const { name, username, password, userType } = req.body;
-    console.log(`Kullanıcı güncelleniyor (ID: ${userId}) - Zaman: ${getTurkishTimeString()}`);
-    
-    // Gerekli alanların kontrolü
-    if (!name || !username || !userType) {
-        return res.status(400).json({ success: false, message: 'Ad, kullanıcı adı ve kullanıcı tipi alanları zorunludur' });
-    }
-    
-    // Kullanıcı tipi kontrolü
-    const allowedTypes = ['admin', 'teacher', 'student'];
-    if (!allowedTypes.includes(userType)) {
-        return res.status(400).json({ success: false, message: 'Geçerli bir kullanıcı tipi seçin' });
-    }
-    
-    // Kullanıcının varlığını kontrol et
-    db.get(`SELECT * FROM users WHERE id = ?`, [userId], (err, user) => {
-        if (err) {
-            console.error('Kullanıcı kontrolü yapılırken hata:', err.message);
-            return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-        }
-        
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'Kullanıcı bulunamadı' });
-        }
-        
-        // Kullanıcı adı benzersizliğini kontrol et (kendi kullanıcı adı hariç)
-        db.get(`SELECT * FROM users WHERE username = ? AND id != ?`, [username, userId], (err, usernameCheck) => {
-            if (err) {
-                console.error('Kullanıcı adı kontrolü yapılırken hata:', err.message);
-                return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-            }
-            
-            if (usernameCheck) {
-                return res.status(400).json({ success: false, message: 'Bu kullanıcı adı başka bir kullanıcı tarafından kullanılıyor' });
-            }
-            
-            // Güncelleme sorgusu oluştur
-            let query = `UPDATE users SET name = ?, username = ?, userType = ?`;
-            let params = [name, username, userType];
-            
-            // Şifre değiştirilecekse ekle
-            if (password && password.trim() !== '') {
-                const hashedPassword = Buffer.from(password).toString('base64');
-                query += `, password = ?`;
-                params.push(hashedPassword);
-            }
-            
-            query += ` WHERE id = ?`;
-            params.push(userId);
-            
-            // Kullanıcıyı güncelle
-            db.run(query, params, function(err) {
-                if (err) {
-                    console.error('Kullanıcı güncellenirken hata:', err.message);
-                    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-                }
-                
-                console.log(`Kullanıcı güncellendi. ID: ${userId}, Zaman: ${getTurkishTimeString()}`);
-                
-                res.json({ 
-                    success: true, 
-                    message: 'Kullanıcı başarıyla güncellendi'
-                });
-            });
-        });
-    });
-});
-
-// Kullanıcı silme
-app.delete('/api/users/:id', (req, res) => {
-    const userId = req.params.id;
-    console.log(`Kullanıcı siliniyor (ID: ${userId}) - Zaman: ${getTurkishTimeString()}`);
-    
-    // Kullanıcının varlığını kontrol et
-    db.get(`SELECT * FROM users WHERE id = ?`, [userId], (err, user) => {
-        if (err) {
-            console.error('Kullanıcı kontrolü yapılırken hata:', err.message);
-            return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-        }
-        
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'Kullanıcı bulunamadı' });
-        }
-        
-        // Admin kontrolü (son admini silmeyi engelle)
-        if (user.userType === 'admin') {
-            db.get(`SELECT COUNT(*) as count FROM users WHERE userType = 'admin'`, [], (err, result) => {
-                if (err) {
-                    console.error('Admin sayısı kontrol edilirken hata:', err.message);
-                    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-                }
-                
-                if (result.count <= 1) {
-                    return res.status(400).json({ 
-                        success: false, 
-                        message: 'Son yönetici kullanıcısı silinemez. Önce başka bir yönetici ekleyin.' 
-                    });
-                }
-                
-                deleteUserRecord(userId, res);
-            });
-        } else {
-            deleteUserRecord(userId, res);
-        }
-    });
-});
-
-// Kullanıcı silme yardımcı fonksiyonu
-function deleteUserRecord(userId, res) {
-    db.run(`DELETE FROM users WHERE id = ?`, [userId], function(err) {
-        if (err) {
-            console.error('Kullanıcı silinirken hata:', err.message);
-            return res.status(500).json({ success: false, message: 'Sunucu hatası' });
-        }
-        
-        if (this.changes === 0) {
-            return res.status(404).json({ success: false, message: 'Kullanıcı bulunamadı' });
-        }
-        
-        console.log(`Kullanıcı silindi. ID: ${userId}, Zaman: ${getTurkishTimeString()}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Kullanıcı başarıyla silindi'
-        });
-    });
-}
-
-// Sunucuyu başlat
-app.listen(PORT, () => {
-    console.log(`Server ${PORT} portunda çalışıyor! Zaman: ${getTurkishTimeString()}`);
-    console.log(`Uygulamaya erişmek için: http://localhost:${PORT}`);
-    
-    // Veritabanı başlatma kodları...
-}); 
-
-// Yeni endpoint - Kullanıcı oluşturma
-app.get('/api/init', (req, res) => {
-    // Güvenlik kontrolü - sadece istek Render'dan geliyorsa çalıştır
-    const userHost = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-    console.log(`Init endpoint çağrıldı - Host: ${userHost}`);
-    
-    // Base64 ile şifreleme (123456 şifresini Base64'e çeviriyoruz)
-    const password = Buffer.from('123456').toString('base64');
-    
-    // Hem "Yönetici" hem de "admin" tipiyle oluşturalım
-    if (isPg) {
-        // PostgreSQL için
-        console.log('PostgreSQL için varsayılan kullanıcılar oluşturuluyor...');
-        
-        const insertYoneticiSQL = `
-            INSERT INTO users (name, username, password, userType)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (username) DO NOTHING
-        `;
-        
-        db.run(insertYoneticiSQL, ['MEK Admin', 'MEK', password, 'Yönetici'], function(err) {
-            if (err) {
-                console.error('Init: Varsayılan Yönetici kullanıcısı oluştururken hata:', err.message);
-            } else {
-                console.log('Init: Varsayılan Yönetici kullanıcısı oluşturuldu: MEK');
-            }
-        });
-        
-        const insertAdminSQL = `
-            INSERT INTO users (name, username, password, userType)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (username) DO NOTHING
-        `;
-        
-        db.run(insertAdminSQL, ['Admin User', 'admin', password, 'admin'], function(err) {
-            if (err) {
-                console.error('Init: Varsayılan admin kullanıcısı oluştururken hata:', err.message);
-            } else {
-                console.log('Init: Varsayılan admin kullanıcısı oluşturuldu: admin');
-            }
-            
-            // Kullanıcıları kontrol et
-            db.all("SELECT id, username, userType FROM users", [], (err, rows) => {
-                if (err) {
-                    console.error('Init: Kullanıcı listesi kontrol edilirken hata:', err.message);
-                    return res.json({ success: false, error: err.message, users: [] });
-                }
-                
-                console.log('Init: Mevcut kullanıcılar:', rows);
-                return res.json({ success: true, message: 'Veritabanı başlatıldı', users: rows });
-            });
-        });
-    } else {
-        // SQLite için
-        console.log('SQLite için varsayılan kullanıcılar oluşturuluyor...');
-        
-        db.run(
-            `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
-            ['MEK Admin', 'MEK', password, 'Yönetici'],
-            function(err) {
-                if (err) {
-                    console.error('Init: Varsayılan Yönetici kullanıcısı oluştururken hata:', err.message);
-                } else {
-                    console.log('Init: Varsayılan Yönetici kullanıcısı oluşturuldu: MEK');
-                }
-                
-                db.run(
-                    `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
-                    ['Admin User', 'admin', password, 'admin'],
-                    function(err) {
-                        if (err) {
-                            console.error('Init: Varsayılan admin kullanıcısı oluştururken hata:', err.message);
-                        } else {
-                            console.log('Init: Varsayılan admin kullanıcısı oluşturuldu: admin');
-                        }
-                        
-                        // Kullanıcıları kontrol et
-                        db.all("SELECT id, username, userType FROM users", [], (err, rows) => {
-                            if (err) {
-                                console.error('Init: Kullanıcı listesi kontrol edilirken hata:', err.message);
-                                return res.json({ success: false, error: err.message, users: [] });
-                            }
+                    // Yönetici tipindeki kullanıcıları admin olarak güncelle
+                    if (user.userType === 'Yönetici') {
+                        const updateQuery = isPg ? 
+                            `UPDATE users SET userType = $1 WHERE id = $2` :
+                            `UPDATE users SET userType = ? WHERE id = ?`;
                             
-                            console.log('Init: Mevcut kullanıcılar:', rows);
-                            return res.json({ success: true, message: 'Veritabanı başlatıldı', users: rows });
+                        const updateParams = isPg ? ['admin', user.id] : ['admin', user.id];
+                        
+                        db.run(updateQuery, updateParams, err => {
+                            if (err) console.error(`${user.username} kullanıcısının tipi güncellenirken hata:`, err.message);
+                            else console.log(`${user.username} kullanıcısının tipi "Yönetici"den "admin"e güncellendi`);
                         });
                     }
-                );
+                });
             }
-        );
-    }
-}); 
-
-// MEK kullanıcısının tipini güncelleyen endpoint
-app.get('/api/update-mek', (req, res) => {
-    console.log('MEK kullanıcısı admin tipine güncelleniyor...');
-    
-    // PostgreSQL için MEK kullanıcısının tipini güncelle
-    let updateQuery, params;
-    
-    if (isPg) {
-        updateQuery = `UPDATE users SET userType = $1 WHERE username = $2`;
-        params = ['admin', 'MEK'];
-    } else {
-        updateQuery = `UPDATE users SET userType = ? WHERE username = ?`;
-        params = ['admin', 'MEK'];
-    }
-    
-    db.run(updateQuery, params, function(err) {
-        if (err) {
-            console.error('MEK kullanıcısı güncellenirken hata:', err.message);
-            return res.json({ success: false, error: err.message });
-        }
-        
-        console.log('MEK kullanıcısı başarıyla admin tipine güncellendi');
-        
-        // Kullanıcıları listele
-        db.all("SELECT id, username, userType FROM users", [], (err, rows) => {
-            if (err) {
-                console.error('Kullanıcı listesi kontrol edilirken hata:', err.message);
-                return res.json({ success: true, message: 'MEK kullanıcısı güncellendi ama kullanıcılar listelenemedi', users: [] });
-            }
-            
-            console.log('Mevcut kullanıcılar:', rows);
-            return res.json({ 
-                success: true, 
-                message: 'MEK kullanıcısı başarıyla admin tipine güncellendi', 
-                users: rows 
-            });
         });
-    });
-}); 
-
-// Debug endpoint - Veritabanı durumunu görüntüle
-app.get('/api/debug/db-status', (req, res) => {
-    console.log('Veritabanı durum kontrolü isteği alındı');
-    
-    try {
-        // Tablo listesini al
-        let getTablesQuery;
-        if (isPg) {
-            getTablesQuery = `
-                SELECT table_name 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public'
-                AND table_type = 'BASE TABLE'
-            `;
-        } else {
-            getTablesQuery = `SELECT name FROM sqlite_master WHERE type='table'`;
-        }
-        
-        db.all(getTablesQuery, [], async (err, tables) => {
-            if (err) {
-                console.error('Tablo bilgisi alınamadı:', err);
-                return res.status(500).json({ 
-                    success: false, 
-                    error: 'Tablo bilgisi alınamadı', 
-                    details: err.message 
-                });
-            }
-            
-            if (!tables || tables.length === 0) {
-                return res.json({
-                    success: true,
-                    dbType: isPg ? 'PostgreSQL' : 'SQLite',
-                    message: 'Veritabanında tablo bulunamadı',
-                    tables: []
-                });
-            }
-            
-            // Tablo bilgilerini oluştur
-            const tableData = [];
-            const tablePromises = [];
-            
-            for (const table of tables) {
-                const tableName = isPg ? table.table_name : table.name;
-                
-                // Bazı sistem tablolarını atla
-                if (
-                    tableName === 'sqlite_sequence' || 
-                    tableName.startsWith('sqlite_') || 
-                    tableName.startsWith('pg_') ||
-                    tableName === 'information_schema'
-                ) {
-                    continue;
-                }
-                
-                const tablePromise = new Promise((resolve) => {
-                    const countQuery = `SELECT COUNT(*) as count FROM ${tableName}`;
-                    
-                    db.get(countQuery, [], (err, countResult) => {
-                        if (err) {
-                            console.error(`${tableName} tablosu sayım hatası:`, err);
-                            resolve({
-                                name: tableName,
-                                count: 'Hata',
-                                error: err.message,
-                                records: []
-                            });
-                            return;
-                        }
-                        
-                        const count = countResult ? countResult.count : 0;
-                        
-                        // İlk 5 kaydı al
-                        const recordsQuery = `SELECT * FROM ${tableName} LIMIT 5`;
-                        
-                        db.all(recordsQuery, [], (err, records) => {
-                            if (err) {
-                                console.error(`${tableName} tablosu kayıt hatası:`, err);
-                                resolve({
-                                    name: tableName,
-                                    count,
-                                    error: err.message,
-                                    records: []
-                                });
-                                return;
-                            }
-                            
-                            // Tablo içeriği bilgilerini döndür
-                            let tableInfo;
-                            if (isPg) {
-                                const columnsQuery = `
-                                    SELECT column_name, data_type 
-                                    FROM information_schema.columns 
-                                    WHERE table_name = '${tableName}'
-                                `;
-                                
-                                db.all(columnsQuery, [], (err, columns) => {
-                                    if (err) {
-                                        console.error(`${tableName} tablosu sütun bilgisi hatası:`, err);
-                                        resolve({
-                                            name: tableName,
-                                            count,
-                                            columns: 'Hata',
-                                            records
-                                        });
-                                        return;
-                                    }
-                                    
-                                    resolve({
-                                        name: tableName,
-                                        count,
-                                        columns: columns.map(col => `${col.column_name} (${col.data_type})`),
-                                        records
-                                    });
-                                });
-                            } else {
-                                db.all(`PRAGMA table_info(${tableName})`, [], (err, columns) => {
-                                    if (err) {
-                                        console.error(`${tableName} tablosu sütun bilgisi hatası:`, err);
-                                        resolve({
-                                            name: tableName,
-                                            count,
-                                            columns: 'Hata',
-                                            records
-                                        });
-                                        return;
-                                    }
-                                    
-                                    resolve({
-                                        name: tableName,
-                                        count,
-                                        columns: columns.map(col => `${col.name} (${col.type})`),
-                                        records
-                                    });
-                                });
-                            }
-                        });
-                    });
-                });
-                
-                tablePromises.push(tablePromise);
-            }
-            
-            // Tüm tablo bilgilerini topla
-            Promise.all(tablePromises)
-                .then((tablesInfo) => {
-                    // Kullanıcı tiplerine göre bir özet ekle
-                    let userTypesSummary = [];
-                    
-                    if (tablesInfo.some(table => table.name === 'users')) {
-                        db.all(`SELECT userType, COUNT(*) as count FROM users GROUP BY userType`, [], (err, types) => {
-                            if (err) {
-                                console.error('Kullanıcı tipleri alınamadı:', err);
-                                userTypesSummary = ['Hata: ' + err.message];
-                            } else {
-                                userTypesSummary = types.map(type => `${type.userType}: ${type.count}`);
-                                console.log('Mevcut kullanıcı tipleri:', userTypesSummary);
-                            }
-                            
-                            // Tüm veritabanı durum bilgisini döndür
-                            res.json({
-                                success: true,
-                                dbType: isPg ? 'PostgreSQL' : 'SQLite',
-                                tables: tablesInfo,
-                                userTypes: userTypesSummary,
-                                timestamp: new Date().toISOString()
-                            });
-                        });
-                    } else {
-                        // Kullanıcı tablosu yoksa direkt döndür
-                        res.json({
-                            success: true,
-                            dbType: isPg ? 'PostgreSQL' : 'SQLite', 
-                            tables: tablesInfo,
-                            userTypes: [],
-                            timestamp: new Date().toISOString()
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Veritabanı durum bilgisi oluşturulurken hata:', error);
-                    res.status(500).json({
-                        success: false,
-                        error: 'Veritabanı durum bilgisi oluşturulurken hata',
-                        details: error.message
-                    });
-                });
-        });
-    } catch (error) {
-        console.error('Veritabanı durum bilgisi alınamadı:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Veritabanı durum bilgisi alınamadı',
-            details: error.message
-        });
-    }
-});
-
-// Tüm örnek verileri yükleyen endpoint
-app.get('/api/init-data', (req, res) => {
-    console.log('Örnek verileri yükleme isteği alındı');
-    
-    try {
-        // Kullanıcıları ekle
-        console.log('Örnek kullanıcılar ekleniyor...');
-        const password = Buffer.from('123456').toString('base64');
-        
-        // PostgreSQL için kullanıcı ekle
-        if (isPg) {
-            const insertAdmin = `
-                INSERT INTO users (name, username, password, userType)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (username) DO UPDATE SET userType = $4
-            `;
-            db.run(insertAdmin, ['MEK Admin', 'MEK', password, 'admin'], err => {
-                if (err) console.error('Kullanıcı eklenirken hata:', err.message);
-                else console.log('MEK admin kullanıcısı eklendi veya güncellendi');
-            });
-            
-            db.run(insertAdmin, ['Admin User', 'admin', password, 'admin'], err => {
-                if (err) console.error('Kullanıcı eklenirken hata:', err.message);
-                else console.log('admin kullanıcısı eklendi veya güncellendi');
-            });
-        } else {
-            // SQLite için kullanıcı ekle
-            db.run(
-                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
-                ['MEK Admin', 'MEK', password, 'admin'],
-                err => {
-                    if (err) console.error('Kullanıcı eklenirken hata:', err.message);
-                    else console.log('MEK admin kullanıcısı eklendi');
-                }
-            );
-            
-            db.run(
-                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
-                ['Admin User', 'admin', password, 'admin'],
-                err => {
-                    if (err) console.error('Kullanıcı eklenirken hata:', err.message);
-                    else console.log('admin kullanıcısı eklendi');
-                }
-            );
-        }
         
         // Ders programı verileri ekle
         console.log('Ders programı örnekleri ekleniyor...');
