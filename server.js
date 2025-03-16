@@ -1053,7 +1053,13 @@ app.post('/api/schedule/save', (req, res) => {
 // Ödevler için API endpoint'leri
 // 1. Tüm ödevleri getir
 app.get('/api/homework/get', (req, res) => {
-    const query = `SELECT * FROM homework ORDER BY dueDate ASC`;
+    let query;
+    
+    if (isPg) {
+        query = `SELECT * FROM homework ORDER BY "dueDate" ASC`;
+    } else {
+        query = `SELECT * FROM homework ORDER BY dueDate ASC`;
+    }
     
     db.all(query, [], (err, rows) => {
         if (err) {
@@ -1062,7 +1068,6 @@ app.get('/api/homework/get', (req, res) => {
         }
         
         console.log(`${rows.length} adet ödev kaydı bulundu. Zaman: ${getTurkishTimeString()}`);
-        // Direkt dizi olarak dön, içinde nesne olarak değil
         res.json(rows);
     });
 });
@@ -2132,6 +2137,152 @@ app.post('/api/users/update', (req, res) => {
     } catch (error) {
         console.error('Kullanıcı güncellenirken hata:', error);
         return res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 2. Yeni duyuru ekle
+app.post('/api/announcements/add', (req, res) => {
+    console.log('Yeni duyuru ekleme isteği alındı:', req.body);
+    
+    const { title, content, importance, userType } = req.body;
+    
+    // Yönetici kontrolü
+    if (userType !== 'admin' && userType !== 'Yönetici') {
+        console.error('Yetkisiz duyuru ekleme girişimi:', userType);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    // Gerekli alanların kontrolü
+    if (!title || !content) {
+        console.error('Eksik bilgi ile duyuru ekleme girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Başlık ve içerik gereklidir' 
+        });
+    }
+    
+    try {
+        // Varsayılan importance değeri
+        const announcementImportance = importance || 'normal';
+        const now = new Date().toISOString();
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                INSERT INTO announcements (title, content, importance, "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (title) DO NOTHING
+                RETURNING id
+            `;
+            params = [title, content, announcementImportance, now, now];
+        } else {
+            query = `
+                INSERT OR IGNORE INTO announcements (title, content, importance, createdAt, updatedAt)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `;
+            params = [title, content, announcementImportance];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Duyuru eklenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            console.log(`Yeni duyuru eklendi: ${title} - ID: ${this.lastID || 'N/A'}`);
+            res.json({ 
+                success: true, 
+                message: 'Duyuru başarıyla eklendi', 
+                id: this.lastID 
+            });
+        });
+    } catch (error) {
+        console.error('Duyuru ekleme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 2. Sınav notu ekle
+app.post('/api/grades/add', (req, res) => {
+    console.log('Yeni sınav notu ekleme isteği alındı:', req.body);
+    
+    const { title, lesson, type, examDate, userType } = req.body;
+    
+    // Yönetici kontrolü
+    if (userType !== 'admin' && userType !== 'Yönetici') {
+        console.error('Yetkisiz sınav notu ekleme girişimi:', userType);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    // Gerekli alanların kontrolü
+    if (!title || !lesson || !type || !examDate) {
+        console.error('Eksik bilgi ile sınav notu ekleme girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Başlık, ders, tür ve sınav tarihi gereklidir' 
+        });
+    }
+    
+    try {
+        const now = new Date().toISOString();
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                INSERT INTO grades (title, lesson, type, "examDate", "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (title, lesson) DO NOTHING
+                RETURNING id
+            `;
+            params = [title, lesson, type, examDate, now, now];
+        } else {
+            query = `
+                INSERT OR IGNORE INTO grades (title, lesson, type, examDate, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `;
+            params = [title, lesson, type, examDate];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Sınav notu eklenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            console.log(`Yeni sınav notu eklendi: ${title} (${lesson}) - ID: ${this.lastID || 'N/A'}`);
+            res.json({ 
+                success: true, 
+                message: 'Sınav notu başarıyla eklendi', 
+                id: this.lastID 
+            });
+        });
+    } catch (error) {
+        console.error('Sınav notu ekleme hatası:', error);
+        res.status(500).json({ 
             success: false, 
             message: 'Sunucu hatası', 
             error: error.message 
