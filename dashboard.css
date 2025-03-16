@@ -958,6 +958,24 @@ html[data-theme="dark"] .schedule-table tr:hover td {
     height: 40px;
 }
 
+/* Mobilde ders saati sütununu sabitlemek için yeni eklenen kodlar */
+.schedule-table th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    background-color: rgba(var(--accent-color-rgb), 0.05);
+}
+
+/* Sabit sütunun arkasında kalan içeriğin önüne geçmesini sağlamak için */
+.schedule-table td:first-child {
+    background-color: rgba(var(--accent-color-rgb), 0.05);
+}
+
+/* Hover durumunda sabit sütunu da renklendir */
+.schedule-table tr:hover td:first-child {
+    background-color: rgba(var(--accent-color-rgb), 0.2);
+}
+
 .schedule-time {
     font-size: 0.65rem;
     color: var(--secondary-text);
@@ -982,6 +1000,7 @@ html[data-theme="dark"] .schedule-table tr:hover td {
         display: block;
         overflow-x: auto;
         white-space: nowrap;
+        -webkit-overflow-scrolling: touch; /* iOS için daha akıcı kaydırma */
     }
     
     .modal-content {
@@ -2324,58 +2343,37 @@ html[data-theme="dark"] .schedule-table tr:hover td {
     display: block;
 }
 
-/* Tüm ders satırlarının aynı görünmesini sağla */
-.schedule-table tr {
-    margin: 0;
-    padding: 0;
-    line-height: 1; /* Satır yüksekliğini sıfırla */
-    border-collapse: collapse; /* Kenarları birleştir */
+/* Kullanıcı yönetimi mobil uyumluluk iyileştirmeleri */
+@media (max-width: 768px) {
+    .user-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .user-table th,
+    .user-table td {
+        padding: 10px 8px;
+        font-size: 12px;
+    }
+    
+    .user-management-actions {
+        justify-content: center;
+    }
+    
+    #userManagementModal .modal-content {
+        width: 95%;
+        max-width: 95%;
+        margin: 0 auto;
+        height: auto;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
 }
 
-/* Tablo kenar boşluklarını kaldır */
-.schedule-table {
-    border-collapse: collapse;
-    border-spacing: 0;
-}
-
-/* Tüm satırlar için aynı yükseklik */
-.schedule-table tr td {
-    height: 46px;
-    box-sizing: border-box;
-    padding: 3px;
-    line-height: 1.2;
-}
-
-/* Tüm satırların altındaki boşluğu kaldır */
-.schedule-table tr {
-    border-bottom-width: 0;
-}
-
-/* Temel tablo stili */
-.schedule-table {
-    border-collapse: collapse !important;
-    border-spacing: 0 !important;
-    empty-cells: show !important;
-}
-
-/* Hücrelere eşit spacing vermek için */
-.schedule-table tbody {
-    border-spacing: 0 !important;
-}
-
-/* Tüm satırlara stil */
-.schedule-table tr {
-    margin: 0 !important;
-    padding: 0 !important;
-    border: 1px solid var(--border-color);
-    line-height: 1;
-}
-
-/* Tüm hücrelere stil */
-.schedule-table td {
-    padding: 4px !important;
-    margin: 0 !important;
-    height: 43px !important;
-    vertical-align: middle !important;
-    border: 1px solid var(--border-color) !important;
+.user-management-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 20px;
 } 
