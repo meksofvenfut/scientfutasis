@@ -1817,3 +1817,96 @@ app.listen(PORT, () => {
     
     // Veritabanı başlatma kodları...
 }); 
+
+// Yeni endpoint - Kullanıcı oluşturma
+app.get('/api/init', (req, res) => {
+    // Güvenlik kontrolü - sadece istek Render'dan geliyorsa çalıştır
+    const userHost = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    console.log(`Init endpoint çağrıldı - Host: ${userHost}`);
+    
+    // Base64 ile şifreleme (123456 şifresini Base64'e çeviriyoruz)
+    const password = Buffer.from('123456').toString('base64');
+    
+    // Hem "Yönetici" hem de "admin" tipiyle oluşturalım
+    if (isPg) {
+        // PostgreSQL için
+        console.log('PostgreSQL için varsayılan kullanıcılar oluşturuluyor...');
+        
+        const insertYoneticiSQL = `
+            INSERT INTO users (name, username, password, userType)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (username) DO NOTHING
+        `;
+        
+        db.run(insertYoneticiSQL, ['MEK Admin', 'MEK', password, 'Yönetici'], function(err) {
+            if (err) {
+                console.error('Init: Varsayılan Yönetici kullanıcısı oluştururken hata:', err.message);
+            } else {
+                console.log('Init: Varsayılan Yönetici kullanıcısı oluşturuldu: MEK');
+            }
+        });
+        
+        const insertAdminSQL = `
+            INSERT INTO users (name, username, password, userType)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (username) DO NOTHING
+        `;
+        
+        db.run(insertAdminSQL, ['Admin User', 'admin', password, 'admin'], function(err) {
+            if (err) {
+                console.error('Init: Varsayılan admin kullanıcısı oluştururken hata:', err.message);
+            } else {
+                console.log('Init: Varsayılan admin kullanıcısı oluşturuldu: admin');
+            }
+            
+            // Kullanıcıları kontrol et
+            db.all("SELECT id, username, userType FROM users", [], (err, rows) => {
+                if (err) {
+                    console.error('Init: Kullanıcı listesi kontrol edilirken hata:', err.message);
+                    return res.json({ success: false, error: err.message, users: [] });
+                }
+                
+                console.log('Init: Mevcut kullanıcılar:', rows);
+                return res.json({ success: true, message: 'Veritabanı başlatıldı', users: rows });
+            });
+        });
+    } else {
+        // SQLite için
+        console.log('SQLite için varsayılan kullanıcılar oluşturuluyor...');
+        
+        db.run(
+            `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+            ['MEK Admin', 'MEK', password, 'Yönetici'],
+            function(err) {
+                if (err) {
+                    console.error('Init: Varsayılan Yönetici kullanıcısı oluştururken hata:', err.message);
+                } else {
+                    console.log('Init: Varsayılan Yönetici kullanıcısı oluşturuldu: MEK');
+                }
+                
+                db.run(
+                    `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                    ['Admin User', 'admin', password, 'admin'],
+                    function(err) {
+                        if (err) {
+                            console.error('Init: Varsayılan admin kullanıcısı oluştururken hata:', err.message);
+                        } else {
+                            console.log('Init: Varsayılan admin kullanıcısı oluşturuldu: admin');
+                        }
+                        
+                        // Kullanıcıları kontrol et
+                        db.all("SELECT id, username, userType FROM users", [], (err, rows) => {
+                            if (err) {
+                                console.error('Init: Kullanıcı listesi kontrol edilirken hata:', err.message);
+                                return res.json({ success: false, error: err.message, users: [] });
+                            }
+                            
+                            console.log('Init: Mevcut kullanıcılar:', rows);
+                            return res.json({ success: true, message: 'Veritabanı başlatıldı', users: rows });
+                        });
+                    }
+                );
+            }
+        );
+    }
+}); 
