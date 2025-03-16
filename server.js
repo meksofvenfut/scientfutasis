@@ -196,10 +196,22 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: function (req, file, cb) {
-        // Orijinal dosya adını koru ve karakterleri düzgün şekilde sakla
-        // Dosya adında güvenlik için zararlı karakterleri temizle
-        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-        const safeName = originalName.replace(/[&\/\\#,+()$~%'":*?<>{}]/g, '_');
+        // Dosya adı içindeki Türkçe karakterleri düzgün şekilde sakla
+        // HTTP başlığından gelen dosya adını UTF-8'e dönüştür
+        // Multer dosya adlarını binary olarak alır, bu yüzden açıkça dönüştürüyoruz
+        let originalName = file.originalname;
+        
+        try {
+            // Dosya adını UTF-8'e dönüştür
+            // Latin1 (ISO-8859-1) encoding'den başlayacağız çünkü HTTP başlıkları genellikle bu şekilde gelir
+            originalName = Buffer.from(originalName, 'binary').toString('utf8');
+        } catch (error) {
+            console.error('Dosya adı dönüştürme hatası:', error);
+        }
+        
+        // Dosya adında güvenlik için zararlı karakterleri temizle, ama Türkçe karakterleri koru
+        const safeName = originalName.replace(/[\/\\:*?"<>|]/g, '_');
+        console.log(`Orijinal dosya adı: ${file.originalname}, Kayıt edilecek: ${safeName}`);
         cb(null, safeName);
     }
 });
@@ -2263,8 +2275,19 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         
         // Dosya bilgileri
         const filePath = file ? file.path : null;
-        const fileName = file ? file.originalname : null;
+        // Dosya adını düzgün şekilde kaydet - filename zaten filename handler'da dönüştürüldü
+        const fileName = file ? file.filename : null;
         const fileSize = file ? file.size : null;
+        
+        // Dosya bilgilerini loglayalım
+        if (file) {
+            console.log('Dosya bilgileri:', {
+                path: filePath,
+                name: fileName,
+                originalName: file.originalname,
+                size: fileSize
+            });
+        }
         
         let query, params;
         
@@ -2346,9 +2369,15 @@ app.put('/api/grades/update/:id', upload.single('file'), (req, res) => {
         
         if (file) {
             filePath = file.path;
-            fileName = file.originalname;
+            // Dosya adı için filename kullan (kodlama düzeltilmiş hali)
+            fileName = file.filename;
             fileSize = file.size;
-            console.log('Yeni dosya yüklendi:', fileName);
+            console.log('Yeni dosya yüklendi:', {
+                path: filePath,
+                name: fileName,
+                originalName: file.originalname,
+                size: fileSize
+            });
         }
         
         const now = new Date().toISOString();
@@ -2531,7 +2560,8 @@ app.get('/api/grades/download/:id', (req, res) => {
             
             // Eğer dosya varsa indirme işlemi başlat
             const filePath = row.file_path;
-            const fileName = row.file_name ? Buffer.from(row.file_name, 'latin1').toString('utf8') : 'dosya';
+            // Dosya adı veritabanından doğrudan gelir, zaten düzgün şekilde kaydedilmiş olmalı
+            let fileName = row.file_name || 'dosya';
             
             console.log(`Dosya indiriliyor: ${filePath} - ${fileName}`);
             
@@ -2545,7 +2575,7 @@ app.get('/api/grades/download/:id', (req, res) => {
             }
             
             // Dosyayı gönder
-            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+            res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
             res.setHeader('Content-Type', 'application/octet-stream');
             
             const fileStream = fs.createReadStream(filePath);
