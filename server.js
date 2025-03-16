@@ -1911,12 +1911,6 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Sunucuyu dinlemeye başla
-app.listen(PORT, () => {
-    console.log(`Server ${PORT} portunda çalışıyor...`);
-    console.log(`http://localhost:${PORT} adresinden erişebilirsiniz`);
-});
-
 // Duyurular için API endpoint'leri
 // 1. Tüm duyuruları getir
 app.get('/api/announcements/get', (req, res) => {
@@ -1993,4 +1987,10 @@ app.get('/api/grades/get', (req, res) => {
             details: error.message
         });
     }
+});
+
+// Sunucuyu dinlemeye başla
+app.listen(PORT, () => {
+    console.log(`Server ${PORT} portunda çalışıyor...`);
+    console.log(`http://localhost:${PORT} adresinden erişebilirsiniz`);
 });
