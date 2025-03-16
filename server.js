@@ -990,57 +990,225 @@ app.get('/api/homework/get', (req, res) => {
 
 // 2. Yeni ödev ekle
 app.post('/api/homework/add', (req, res) => {
-                console.error('Kullanıcı tipleri kontrolü hatası:', err.message);
-            } else {
-                console.log('Mevcut kullanıcılar ve tipleri:');
-                rows.forEach(user => {
-                    console.log(`- ${user.username}: ${user.userType}`);
-                    
-                    // Yönetici tipindeki kullanıcıları admin olarak güncelle
-                    if (user.userType === 'Yönetici') {
-                        const updateQuery = isPg ? 
-                            `UPDATE users SET userType = $1 WHERE id = $2` :
-                            `UPDATE users SET userType = ? WHERE id = ?`;
-                            
-                        const updateParams = isPg ? ['admin', user.id] : ['admin', user.id];
-                        
-                        db.run(updateQuery, updateParams, err => {
-                            if (err) console.error(`${user.username} kullanıcısının tipi güncellenirken hata:`, err.message);
-                            else console.log(`${user.username} kullanıcısının tipi "Yönetici"den "admin"e güncellendi`);
-                        });
-                    }
+    console.log('Yeni ödev ekleme isteği alındı:', req.body);
+    
+    const { title, lesson, dueDate, description, userType } = req.body;
+    
+    // Yönetici kontrolü
+    if (userType !== 'admin' && userType !== 'Yönetici') {
+        console.error('Yetkisiz ödev ekleme girişimi:', userType);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    // Gerekli alanların kontrolü
+    if (!lesson || !dueDate || !description) {
+        console.error('Eksik bilgi ile ödev ekleme girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Ders, teslim tarihi ve açıklama gereklidir' 
+        });
+    }
+    
+    try {
+        // Başlık eğer yoksa dersi kullan
+        const homeworkTitle = title || lesson;
+        const now = new Date().toISOString();
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                INSERT INTO homework (title, lesson, dueDate, description, isCompleted, createdAt, updatedAt)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id
+            `;
+            params = [homeworkTitle, lesson, dueDate, description, false, now, now];
+        } else {
+            query = `
+                INSERT INTO homework (title, lesson, dueDate, description, isCompleted, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `;
+            params = [homeworkTitle, lesson, dueDate, description, 0]; // SQLite için boolean 0 olarak saklanır
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Ödev eklenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
                 });
             }
-        });
-        
-        // Ders programı verileri ekle
-        console.log('Ders programı örnekleri ekleniyor...');
-        addScheduleExamples();
-        
-        // Ödevler ekle
-        console.log('Örnek ödevler ekleniyor...');
-        addHomeworkExamples();
-        
-        // Duyurular ekle
-        console.log('Örnek duyurular ekleniyor...');
-        addAnnouncementExamples();
-        
-        // Notlar ekle
-        console.log('Örnek notlar ekleniyor...');
-        addGradeExamples();
-        
-        // Durum bilgisi gönder
-        res.json({
-            success: true,
-            message: 'Örnek veriler yükleme işlemi başlatıldı',
-            note: 'Veritabanına ekleme işlemleri arka planda devam ediyor'
+            
+            console.log(`Yeni ödev eklendi: ${homeworkTitle} - ID: ${this.lastID}`);
+            res.json({ 
+                success: true, 
+                message: 'Ödev başarıyla eklendi', 
+                id: this.lastID 
+            });
         });
     } catch (error) {
-        console.error('Örnek veri yükleme hatası:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Sunucu hatası',
-            details: error.message
+        console.error('Ödev ekleme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 3. Ödev düzenle
+app.put('/api/homework/update/:id', (req, res) => {
+    console.log('Ödev güncelleme isteği alındı:', req.params.id);
+    
+    const homeworkId = req.params.id;
+    const { title, lesson, dueDate, description, userType } = req.body;
+    
+    // Yönetici kontrolü
+    if (userType !== 'admin' && userType !== 'Yönetici') {
+        console.error('Yetkisiz ödev güncelleme girişimi:', userType);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    // Gerekli alanların kontrolü
+    if (!homeworkId || !lesson || !dueDate || !description) {
+        console.error('Eksik bilgi ile ödev güncelleme girişimi');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ID, ders, teslim tarihi ve açıklama gereklidir' 
+        });
+    }
+    
+    try {
+        // Başlık eğer yoksa dersi kullan
+        const homeworkTitle = title || lesson;
+        const now = new Date().toISOString();
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `
+                UPDATE homework 
+                SET title = $1, lesson = $2, dueDate = $3, description = $4, updatedAt = $5
+                WHERE id = $6
+                RETURNING id
+            `;
+            params = [homeworkTitle, lesson, dueDate, description, now, homeworkId];
+        } else {
+            query = `
+                UPDATE homework 
+                SET title = ?, lesson = ?, dueDate = ?, description = ?, updatedAt = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `;
+            params = [homeworkTitle, lesson, dueDate, description, homeworkId];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Ödev güncellenirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (this.changes === 0) {
+                console.log(`Güncellenecek ödev bulunamadı - ID: ${homeworkId}`);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Güncellenecek ödev bulunamadı' 
+                });
+            }
+            
+            console.log(`Ödev güncellendi - ID: ${homeworkId}`);
+            res.json({ 
+                success: true, 
+                message: 'Ödev başarıyla güncellendi', 
+                id: homeworkId 
+            });
+        });
+    } catch (error) {
+        console.error('Ödev güncelleme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 4. Ödev sil
+app.delete('/api/homework/delete/:id', (req, res) => {
+    console.log('Ödev silme isteği alındı:', req.params.id);
+    
+    const homeworkId = req.params.id;
+    const { userType } = req.body;
+    
+    // Yönetici kontrolü
+    if (userType !== 'admin' && userType !== 'Yönetici') {
+        console.error('Yetkisiz ödev silme girişimi:', userType);
+        return res.status(403).json({ 
+            success: false, 
+            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+        });
+    }
+    
+    if (!homeworkId) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'Silinecek ödev ID\'si gereklidir' 
+        });
+    }
+    
+    try {
+        let query, params;
+        
+        if (isPg) {
+            query = `DELETE FROM homework WHERE id = $1`;
+            params = [homeworkId];
+        } else {
+            query = `DELETE FROM homework WHERE id = ?`;
+            params = [homeworkId];
+        }
+        
+        db.run(query, params, function(err) {
+            if (err) {
+                console.error('Ödev silinirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (this.changes === 0) {
+                console.log(`Silinecek ödev bulunamadı - ID: ${homeworkId}`);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Silinecek ödev bulunamadı' 
+                });
+            }
+            
+            console.log(`Ödev silindi - ID: ${homeworkId}`);
+            res.json({ 
+                success: true, 
+                message: 'Ödev başarıyla silindi'
+            });
+        });
+    } catch (error) {
+        console.error('Ödev silme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
         });
     }
 });
@@ -1141,6 +1309,110 @@ app.get('/api/init', (req, res) => {
         });
     } catch (error) {
         console.error('Veritabanı tabloları oluşturulurken hata:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Sunucu hatası',
+            details: error.message
+        });
+    }
+});
+
+// Tüm örnek verileri yükleyen endpoint
+app.get('/api/init-data', (req, res) => {
+    console.log('Örnek verileri yükleme isteği alındı');
+    
+    try {
+        // Kullanıcıları ekle
+        console.log('Örnek kullanıcılar ekleniyor...');
+        const password = Buffer.from('123456').toString('base64');
+        
+        // PostgreSQL için kullanıcı ekle
+        if (isPg) {
+            const insertAdmin = `
+                INSERT INTO users (name, username, password, userType)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (username) DO UPDATE SET userType = $4
+            `;
+            db.run(insertAdmin, ['MEK Admin', 'MEK', password, 'admin'], err => {
+                if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                else console.log('MEK admin kullanıcısı eklendi veya güncellendi');
+            });
+            
+            db.run(insertAdmin, ['Admin User', 'admin', password, 'admin'], err => {
+                if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                else console.log('admin kullanıcısı eklendi veya güncellendi');
+            });
+        } else {
+            // SQLite için kullanıcı ekle
+            db.run(
+                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                ['MEK Admin', 'MEK', password, 'admin'],
+                err => {
+                    if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                    else console.log('MEK admin kullanıcısı eklendi');
+                }
+            );
+            
+            db.run(
+                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                ['Admin User', 'admin', password, 'admin'],
+                err => {
+                    if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                    else console.log('admin kullanıcısı eklendi');
+                }
+            );
+        }
+        
+        // Admin kullanıcıları ekledikten sonra, mevcut kullanıcıların userType'larını kontrol et
+        db.all("SELECT id, username, userType FROM users", [], (err, rows) => {
+            if (err) {
+                console.error('Kullanıcı tipleri kontrolü hatası:', err.message);
+            } else {
+                console.log('Mevcut kullanıcılar ve tipleri:');
+                rows.forEach(user => {
+                    console.log(`- ${user.username}: ${user.userType}`);
+                    
+                    // Yönetici tipindeki kullanıcıları admin olarak güncelle
+                    if (user.userType === 'Yönetici') {
+                        const updateQuery = isPg ? 
+                            `UPDATE users SET userType = $1 WHERE id = $2` :
+                            `UPDATE users SET userType = ? WHERE id = ?`;
+                            
+                        const updateParams = isPg ? ['admin', user.id] : ['admin', user.id];
+                        
+                        db.run(updateQuery, updateParams, err => {
+                            if (err) console.error(`${user.username} kullanıcısının tipi güncellenirken hata:`, err.message);
+                            else console.log(`${user.username} kullanıcısının tipi "Yönetici"den "admin"e güncellendi`);
+                        });
+                    }
+                });
+            }
+        });
+        
+        // Ders programı verileri ekle
+        console.log('Ders programı örnekleri ekleniyor...');
+        addScheduleExamples();
+        
+        // Ödevler ekle
+        console.log('Örnek ödevler ekleniyor...');
+        addHomeworkExamples();
+        
+        // Duyurular ekle
+        console.log('Örnek duyurular ekleniyor...');
+        addAnnouncementExamples();
+        
+        // Notlar ekle
+        console.log('Örnek notlar ekleniyor...');
+        addGradeExamples();
+        
+        // Durum bilgisi gönder
+        res.json({
+            success: true,
+            message: 'Örnek veriler yükleme işlemi başlatıldı',
+            note: 'Veritabanına ekleme işlemleri arka planda devam ediyor'
+        });
+    } catch (error) {
+        console.error('Örnek veri yükleme hatası:', error);
         res.status(500).json({
             success: false,
             error: 'Sunucu hatası',
