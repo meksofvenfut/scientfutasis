@@ -1906,11 +1906,6 @@ function addGradeExamples() {
     console.log('Not örnek kayıtları eklendi.');
 }
 
-// Frontend dosyalarını servis et - tüm rotalar için catch-all
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
 // Duyurular için API endpoint'leri
 // 1. Tüm duyuruları getir
 app.get('/api/announcements/get', (req, res) => {
@@ -1987,6 +1982,11 @@ app.get('/api/grades/get', (req, res) => {
             details: error.message
         });
     }
+});
+
+// Frontend dosyalarını servis et - tüm rotalar için catch-all
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Sunucuyu dinlemeye başla
