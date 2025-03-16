@@ -2653,6 +2653,299 @@ app.get('/api/grades/download/:id', (req, res) => {
     }
 });
 
+// 3. Kullanıcı detaylarını getirme endpoint'i
+app.get('/api/users/:id', (req, res) => {
+    try {
+        const userId = req.params.id;
+        console.log(`Kullanıcı bilgisi isteniyor - ID: ${userId}, Zaman: ${getTurkishTimeString()}`);
+        
+        if (!userId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Kullanıcı ID gereklidir' 
+            });
+        }
+        
+        let query, params;
+        
+        if (isPg) {
+            query = `SELECT id, name, username, "usertype" as "userType", "lastlogin" as "lastLogin" FROM users WHERE id = $1`;
+            params = [userId];
+        } else {
+            query = `SELECT id, name, username, userType, lastLogin FROM users WHERE id = ?`;
+            params = [userId];
+        }
+        
+        db.get(query, params, (err, user) => {
+            if (err) {
+                console.error('Kullanıcı bilgisi çekilirken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (!user) {
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Kullanıcı bulunamadı' 
+                });
+            }
+            
+            console.log(`Kullanıcı bilgisi bulundu: ${user.username}`);
+            return res.json({ 
+                success: true, 
+                user: user 
+            });
+        });
+    } catch (error) {
+        console.error('Kullanıcı bilgisi getirme hatası:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 4. Kullanıcı güncelleme endpoint'i
+app.put('/api/users/:id', (req, res) => {
+    try {
+        const userId = req.params.id;
+        console.log(`Kullanıcı güncelleme isteği - ID: ${userId}, Zaman: ${getTurkishTimeString()}`);
+        
+        const { name, username, password, userType } = req.body;
+        
+        if (!userId || !name || !username || !userType) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Kullanıcı ID, isim, kullanıcı adı ve tipi gereklidir' 
+            });
+        }
+        
+        // Kullanıcı tipi kontrolü
+        const allowedTypes = ['admin', 'teacher', 'student'];
+        if (!allowedTypes.includes(userType)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Geçerli bir kullanıcı tipi seçin' 
+            });
+        }
+        
+        // Kullanıcının var olup olmadığını kontrol et
+        let checkQuery, checkParams;
+        
+        if (isPg) {
+            checkQuery = `SELECT * FROM users WHERE id = $1`;
+            checkParams = [userId];
+        } else {
+            checkQuery = `SELECT * FROM users WHERE id = ?`;
+            checkParams = [userId];
+        }
+        
+        db.get(checkQuery, checkParams, (err, existingUser) => {
+            if (err) {
+                console.error('Kullanıcı kontrolü yapılırken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (!existingUser) {
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Kullanıcı bulunamadı' 
+                });
+            }
+            
+            // Kullanıcı adı değiştiyse, benzersiz olup olmadığını kontrol et
+            if (username !== existingUser.username) {
+                let uniqueQuery, uniqueParams;
+                
+                if (isPg) {
+                    uniqueQuery = `SELECT * FROM users WHERE username = $1 AND id != $2`;
+                    uniqueParams = [username, userId];
+                } else {
+                    uniqueQuery = `SELECT * FROM users WHERE username = ? AND id != ?`;
+                    uniqueParams = [username, userId];
+                }
+                
+                db.get(uniqueQuery, uniqueParams, (err, user) => {
+                    if (err) {
+                        console.error('Kullanıcı adı kontrolü yapılırken hata:', err.message);
+                        return res.status(500).json({ 
+                            success: false, 
+                            message: 'Veritabanı hatası', 
+                            error: err.message 
+                        });
+                    }
+                    
+                    if (user) {
+                        return res.status(409).json({ 
+                            success: false, 
+                            message: 'Bu kullanıcı adı zaten kullanılıyor' 
+                        });
+                    }
+                    
+                    updateUser();
+                });
+            } else {
+                updateUser();
+            }
+            
+            // Kullanıcıyı güncelleme işlemi
+            function updateUser() {
+                const now = new Date().toISOString();
+                let query, params;
+                
+                // Eğer şifre de değiştirilmek isteniyorsa
+                if (password && password.trim() !== '') {
+                    if (isPg) {
+                        query = `
+                            UPDATE users 
+                            SET name = $1, username = $2, password = $3, "usertype" = $4, "updatedAt" = $5
+                            WHERE id = $6
+                        `;
+                        params = [name, username, password, userType, now, userId];
+                    } else {
+                        query = `
+                            UPDATE users 
+                            SET name = ?, username = ?, password = ?, userType = ?, updatedAt = ?
+                            WHERE id = ?
+                        `;
+                        params = [name, username, password, userType, now, userId];
+                    }
+                } else {
+                    // Şifre değiştirilmiyorsa
+                    if (isPg) {
+                        query = `
+                            UPDATE users 
+                            SET name = $1, username = $2, "usertype" = $3, "updatedAt" = $4
+                            WHERE id = $5
+                        `;
+                        params = [name, username, userType, now, userId];
+                    } else {
+                        query = `
+                            UPDATE users 
+                            SET name = ?, username = ?, userType = ?, updatedAt = ?
+                            WHERE id = ?
+                        `;
+                        params = [name, username, userType, now, userId];
+                    }
+                }
+                
+                db.run(query, params, function(err) {
+                    if (err) {
+                        console.error('Kullanıcı güncellenirken hata:', err.message);
+                        return res.status(500).json({ 
+                            success: false, 
+                            message: 'Veritabanı hatası', 
+                            error: err.message 
+                        });
+                    }
+                    
+                    console.log(`Kullanıcı güncellendi - ID: ${userId}, Kullanıcı adı: ${username}`);
+                    return res.json({ 
+                        success: true, 
+                        message: 'Kullanıcı başarıyla güncellendi',
+                        userId: userId
+                    });
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Kullanıcı güncelleme hatası:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
+// 5. Kullanıcı silme endpoint'i
+app.delete('/api/users/:id', (req, res) => {
+    try {
+        const userId = req.params.id;
+        console.log(`Kullanıcı silme isteği - ID: ${userId}, Zaman: ${getTurkishTimeString()}`);
+        
+        if (!userId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Kullanıcı ID gereklidir' 
+            });
+        }
+        
+        // Kullanıcının var olup olmadığını kontrol et
+        let checkQuery, checkParams;
+        
+        if (isPg) {
+            checkQuery = `SELECT * FROM users WHERE id = $1`;
+            checkParams = [userId];
+        } else {
+            checkQuery = `SELECT * FROM users WHERE id = ?`;
+            checkParams = [userId];
+        }
+        
+        db.get(checkQuery, checkParams, (err, user) => {
+            if (err) {
+                console.error('Kullanıcı kontrolü yapılırken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (!user) {
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Kullanıcı bulunamadı' 
+                });
+            }
+            
+            // Kullanıcıyı sil
+            let query, params;
+            
+            if (isPg) {
+                query = `DELETE FROM users WHERE id = $1`;
+                params = [userId];
+            } else {
+                query = `DELETE FROM users WHERE id = ?`;
+                params = [userId];
+            }
+            
+            db.run(query, params, function(err) {
+                if (err) {
+                    console.error('Kullanıcı silinirken hata:', err.message);
+                    return res.status(500).json({ 
+                        success: false, 
+                        message: 'Veritabanı hatası', 
+                        error: err.message 
+                    });
+                }
+                
+                console.log(`Kullanıcı silindi - ID: ${userId}`);
+                return res.json({ 
+                    success: true, 
+                    message: 'Kullanıcı başarıyla silindi',
+                    userId: userId
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Kullanıcı silme hatası:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
+});
+
 // Sunucuyu başlat
 const server = app.listen(PORT, () => {
     console.log(`Server ${PORT} portunda başlatıldı: http://localhost:${PORT}`);
