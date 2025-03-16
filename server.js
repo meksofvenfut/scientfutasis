@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 // Veritabanı kütüphaneleri
 const sqlite3 = require('sqlite3').verbose();
@@ -20,10 +21,16 @@ const PORT = process.env.PORT || 3000;
 
 // Veritabanı bağlantısı
 let db;
-let isPg = false;
+// SQLite veya PostgreSQL kullanılacağını belirle
 const dbType = process.env.DB_TYPE || 'sqlite';
 
-if (dbType === 'pg') {
+// Sabitler
+const DB_PATH = process.env.NODE_ENV === 'production' ? './scientfutasis.db' : ':memory:';
+const isPg = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgres');
+const JWT_SECRET = process.env.JWT_SECRET || 'scientfutasis-secret-key';
+
+// DB bağlantısı kurma
+if (isPg) {
     // PostgreSQL bağlantısı (Render.com'da otomatik sağlanan değişkenler)
     const pool = new Pool({
         connectionString: process.env.DATABASE_URL,
@@ -87,7 +94,6 @@ if (dbType === 'pg') {
         }
     };
     
-    isPg = true;
     console.log('PostgreSQL veritabanına bağlandı');
 } else {
     // SQLite bağlantısı (geliştirme ortamı için)
@@ -557,74 +563,61 @@ function getTurkishTimeString() {
 // API endpoint'leri
 // 1. Giriş (login) endpoint'i
 app.post('/api/login', (req, res) => {
-    const { username, password, userType } = req.body;
-
-    if (!username || !password || !userType) {
-        return res.status(400).json({ error: 'Kullanıcı adı, şifre ve kullanıcı tipi gereklidir' });
+    console.log('Login isteği alındı:', req.body);
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+        console.error('Eksik bilgi: kullanıcı adı veya şifre eksik');
+        return res.status(400).json({ success: false, message: 'Kullanıcı adı ve şifre gereklidir' });
     }
     
-    console.log(`Giriş denemesi - Kullanıcı: ${username}, Tip: ${userType} - Zaman: ${getTurkishTimeString()}`);
-
-    let query, params;
-    
-    if (isPg) {
-        query = `SELECT * FROM users WHERE username = $1 AND userType = $2`;
-        params = [username, userType];
-    } else {
-        query = `SELECT * FROM users WHERE username = ? AND userType = ?`;
-        params = [username, userType];
-    }
-    
-    db.get(query, params, (err, user) => {
-        if (err) {
-            console.error('Giriş yapılırken veritabanı hatası:', err.message);
-            return res.status(500).json({ error: 'Veritabanı hatası' });
-        }
-
-        if (!user) {
-            console.warn(`Başarısız giriş denemesi - Kullanıcı: ${username}, Tip: ${userType} - Kullanıcı bulunamadı`);
-            return res.status(401).json({ error: 'Geçersiz bilgi' });
-        }
-
-        // Base64 ile şifrelenmiş şifre kontrolü
-        const hashedInputPassword = Buffer.from(password).toString('base64');
+    try {
+        const encodedPassword = Buffer.from(password).toString('base64');
+        console.log(`Parola kontrol ediliyor: ${username} için`);
         
-        if (hashedInputPassword !== user.password) {
-            console.warn(`Başarısız giriş denemesi - Kullanıcı: ${username}, Tip: ${userType} - Şifre yanlış`);
-            return res.status(401).json({ error: 'Geçersiz bilgi' });
-        }
+        // Kullanıcıyı veritabanında kontrol et
+        const query = isPg ? 
+            `SELECT id, name, username, userType FROM users WHERE username = $1 AND password = $2` :
+            `SELECT id, name, username, userType FROM users WHERE username = ? AND password = ?`;
         
-        // Son giriş zamanını güncelle
-        const now = new Date().toISOString();
+        const params = isPg ? [username, encodedPassword] : [username, encodedPassword];
         
-        let updateQuery, updateParams;
-        
-        if (isPg) {
-            updateQuery = `UPDATE users SET lastLogin = $1 WHERE id = $2`;
-            updateParams = [now, user.id];
-        } else {
-            updateQuery = `UPDATE users SET lastLogin = ? WHERE id = ?`;
-            updateParams = [now, user.id];
-        }
-        
-        db.run(updateQuery, updateParams, function(err) {
+        db.get(query, params, (err, row) => {
             if (err) {
-                console.error('Son giriş zamanı güncellenirken hata:', err.message);
+                console.error('Veritabanı hatası:', err.message);
+                return res.status(500).json({ success: false, message: 'Sunucu hatası' });
             }
             
-            // Kullanıcı bilgilerini döndür
-            console.log(`Başarılı giriş - Kullanıcı: ${username}, Tip: ${userType}`);
+            if (!row) {
+                console.error('Kimlik doğrulama başarısız: kullanıcı bulunamadı veya şifre yanlış');
+                return res.status(401).json({ success: false, message: 'Kullanıcı adı veya şifre yanlış' });
+            }
+            
+            console.log('Kullanıcı başarıyla giriş yaptı:', row);
+            console.log('User type:', row.userType);
+            
+            // JWT token oluştur
+            const token = jwt.sign(
+                { id: row.id, username: row.username, userType: row.userType },
+                JWT_SECRET,
+                { expiresIn: '1h' }
+            );
+            
             res.json({
                 success: true,
                 user: {
-                    id: user.id,
-                    name: user.name || username,
-                    username: user.username,
-                    userType: user.userType
-                }
+                    id: row.id,
+                    name: row.name,
+                    username: row.username,
+                    userType: row.userType
+                },
+                token: token
             });
         });
-    });
+    } catch (error) {
+        console.error('Login işleminde hata:', error);
+        res.status(500).json({ success: false, message: 'Sunucu hatası', error: error.message });
+    }
 });
 
 // 2. Kullanıcı kayıt endpoint'i
@@ -2128,119 +2121,175 @@ app.get('/api/init-data', (req, res) => {
     console.log('Örnek verileri yükleme isteği alındı');
     
     try {
-        // Kullanıcıları kontrol et
-        db.get("SELECT COUNT(*) as count FROM users", [], (err, row) => {
-            if (err) {
-                console.error('Kullanıcı sayısı kontrolü hatası:', err.message);
-                return res.status(500).json({ success: false, error: 'Veritabanı hatası' });
-            }
-            
-            // Mevcut kullanıcı sayısı
-            const userCount = row ? row.count : 0;
-            console.log(`Veritabanında ${userCount} kullanıcı var`);
-            
-            // Örnek kullanıcılar ekle
-            if (userCount < 2) {
-                console.log('Örnek kullanıcılar ekleniyor...');
-                const password = Buffer.from('123456').toString('base64');
-                
-                // PostgreSQL için kullanıcı ekle
-                if (isPg) {
-                    const insertAdmin = `
-                        INSERT INTO users (name, username, password, userType)
-                        VALUES ($1, $2, $3, $4)
-                        ON CONFLICT (username) DO UPDATE SET userType = $4
-                    `;
-                    db.run(insertAdmin, ['MEK Admin', 'MEK', password, 'admin'], err => {
-                        if (err) console.error('Kullanıcı eklenirken hata:', err.message);
-                        else console.log('MEK admin kullanıcısı eklendi veya güncellendi');
-                    });
-                    
-                    db.run(insertAdmin, ['Admin User', 'admin', password, 'admin'], err => {
-                        if (err) console.error('Kullanıcı eklenirken hata:', err.message);
-                        else console.log('admin kullanıcısı eklendi veya güncellendi');
-                    });
-                } else {
-                    // SQLite için kullanıcı ekle
-                    db.run(
-                        `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
-                        ['MEK Admin', 'MEK', password, 'admin'],
-                        err => {
-                            if (err) console.error('Kullanıcı eklenirken hata:', err.message);
-                            else console.log('MEK admin kullanıcısı eklendi');
-                        }
-                    );
-                    
-                    db.run(
-                        `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
-                        ['Admin User', 'admin', password, 'admin'],
-                        err => {
-                            if (err) console.error('Kullanıcı eklenirken hata:', err.message);
-                            else console.log('admin kullanıcısı eklendi');
-                        }
-                    );
-                }
-            }
-            
-            // Ders programı verileri ekle
-            db.get("SELECT COUNT(*) as count FROM schedule", [], (err, row) => {
-                const scheduleCount = row ? row.count : 0;
-                console.log(`Veritabanında ${scheduleCount} ders programı kaydı var`);
-                
-                if (scheduleCount < 5) {
-                    console.log('Ders programı örnekleri ekleniyor...');
-                    addScheduleExamples();
-                }
-                
-                // Ödevler ekle
-                db.get("SELECT COUNT(*) as count FROM homework", [], (err, row) => {
-                    const homeworkCount = row ? row.count : 0;
-                    console.log(`Veritabanında ${homeworkCount} ödev kaydı var`);
-                    
-                    if (homeworkCount < 2) {
-                        console.log('Örnek ödevler ekleniyor...');
-                        addHomeworkExamples();
-                    }
-                    
-                    // Duyurular ekle
-                    db.get("SELECT COUNT(*) as count FROM announcements", [], (err, row) => {
-                        const announcementsCount = row ? row.count : 0;
-                        console.log(`Veritabanında ${announcementsCount} duyuru kaydı var`);
-                        
-                        if (announcementsCount < 2) {
-                            console.log('Örnek duyurular ekleniyor...');
-                            addAnnouncementExamples();
-                        }
-                        
-                        // Notlar ekle
-                        db.get("SELECT COUNT(*) as count FROM grades", [], (err, row) => {
-                            const gradesCount = row ? row.count : 0;
-                            console.log(`Veritabanında ${gradesCount} not kaydı var`);
-                            
-                            if (gradesCount < 2) {
-                                console.log('Örnek notlar ekleniyor...');
-                                addGradeExamples();
-                            }
-                            
-                            // Durum bilgisi gönder
-                            res.json({
-                                success: true,
-                                message: 'Örnek veriler yüklendi',
-                                stats: {
-                                    users: userCount,
-                                    schedule: scheduleCount,
-                                    homework: homeworkCount,
-                                    announcements: announcementsCount,
-                                    grades: gradesCount
-                                }
-                            });
-                        });
-                    });
-                });
+        // Kullanıcıları ekle
+        console.log('Örnek kullanıcılar ekleniyor...');
+        const password = Buffer.from('123456').toString('base64');
+        
+        // PostgreSQL için kullanıcı ekle
+        if (isPg) {
+            const insertAdmin = `
+                INSERT INTO users (name, username, password, userType)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (username) DO UPDATE SET userType = $4
+            `;
+            db.run(insertAdmin, ['MEK Admin', 'MEK', password, 'admin'], err => {
+                if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                else console.log('MEK admin kullanıcısı eklendi veya güncellendi');
             });
+            
+            db.run(insertAdmin, ['Admin User', 'admin', password, 'admin'], err => {
+                if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                else console.log('admin kullanıcısı eklendi veya güncellendi');
+            });
+        } else {
+            // SQLite için kullanıcı ekle
+            db.run(
+                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                ['MEK Admin', 'MEK', password, 'admin'],
+                err => {
+                    if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                    else console.log('MEK admin kullanıcısı eklendi');
+                }
+            );
+            
+            db.run(
+                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                ['Admin User', 'admin', password, 'admin'],
+                err => {
+                    if (err) console.error('Kullanıcı eklenirken hata:', err.message);
+                    else console.log('admin kullanıcısı eklendi');
+                }
+            );
+        }
+        
+        // Ders programı verileri ekle
+        console.log('Ders programı örnekleri ekleniyor...');
+        addScheduleExamples();
+        
+        // Ödevler ekle
+        console.log('Örnek ödevler ekleniyor...');
+        addHomeworkExamples();
+        
+        // Duyurular ekle
+        console.log('Örnek duyurular ekleniyor...');
+        addAnnouncementExamples();
+        
+        // Notlar ekle
+        console.log('Örnek notlar ekleniyor...');
+        addGradeExamples();
+        
+        // Durum bilgisi gönder
+        res.json({
+            success: true,
+            message: 'Örnek veriler yükleme işlemi başlatıldı',
+            note: 'Veritabanına ekleme işlemleri arka planda devam ediyor'
         });
     } catch (error) {
         console.error('Örnek veri yükleme hatası:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Sunucu hatası',
+            details: error.message
+        });
+    }
+});
+
+// Veritabanı tablolarını oluşturan endpoint
+app.get('/api/init', (req, res) => {
+    console.log('Veritabanı tabloları oluşturma isteği alındı');
+    
+    try {
+        // Kullanıcılar tablosu
+        db.run(`CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+            name TEXT,
+            username TEXT UNIQUE,
+            password TEXT,
+            userType TEXT DEFAULT 'student',
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`, [], err => {
+            if (err) {
+                console.error('Users tablosu oluşturulurken hata:', err.message);
+            } else {
+                console.log('Users tablosu oluşturuldu veya zaten var');
+            }
+        });
+        
+        // Ders programı tablosu
+        db.run(`CREATE TABLE IF NOT EXISTS schedule (
+            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+            userId INTEGER,
+            rowIndex INTEGER,
+            colIndex INTEGER,
+            content TEXT,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (userId, rowIndex, colIndex)
+        )`, [], err => {
+            if (err) {
+                console.error('Schedule tablosu oluşturulurken hata:', err.message);
+            } else {
+                console.log('Schedule tablosu oluşturuldu veya zaten var');
+            }
+        });
+        
+        // Ödevler tablosu
+        db.run(`CREATE TABLE IF NOT EXISTS homework (
+            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+            title TEXT,
+            description TEXT,
+            dueDate TIMESTAMP,
+            lessonId INTEGER,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`, [], err => {
+            if (err) {
+                console.error('Homework tablosu oluşturulurken hata:', err.message);
+            } else {
+                console.log('Homework tablosu oluşturuldu veya zaten var');
+            }
+        });
+        
+        // Duyurular tablosu
+        db.run(`CREATE TABLE IF NOT EXISTS announcements (
+            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+            title TEXT,
+            content TEXT,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`, [], err => {
+            if (err) {
+                console.error('Announcements tablosu oluşturulurken hata:', err.message);
+            } else {
+                console.log('Announcements tablosu oluşturuldu veya zaten var');
+            }
+        });
+        
+        // Notlar tablosu
+        db.run(`CREATE TABLE IF NOT EXISTS grades (
+            id INTEGER PRIMARY KEY ${isPg ? 'GENERATED ALWAYS AS IDENTITY' : 'AUTOINCREMENT'},
+            studentId INTEGER,
+            lessonId INTEGER,
+            grade INTEGER,
+            examType TEXT,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`, [], err => {
+            if (err) {
+                console.error('Grades tablosu oluşturulurken hata:', err.message);
+            } else {
+                console.log('Grades tablosu oluşturuldu veya zaten var');
+                
+                // Yanıt döndür
+                res.json({
+                    success: true,
+                    message: 'Veritabanı tabloları oluşturuldu',
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Veritabanı tabloları oluşturulurken hata:', error);
         res.status(500).json({
             success: false,
             error: 'Sunucu hatası',
