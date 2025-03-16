@@ -156,6 +156,31 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
+// URL düzeltmesi için middleware - /users gibi çağrıları /api/users'a yönlendir
+app.use((req, res, next) => {
+    // API ile ilgili endpointleri kontrol et
+    const apiPaths = [
+        '/users', 
+        '/login', 
+        '/register', 
+        '/schedule', 
+        '/homework', 
+        '/announcements', 
+        '/grades', 
+        '/init', 
+        '/init-data', 
+        '/debug'
+    ];
+    
+    // Eğer path /api ile başlamıyorsa ve bilinen bir API path'i ise
+    if (!req.path.startsWith('/api/') && apiPaths.some(p => req.path.startsWith(p))) {
+        console.log(`URL yönlendirme: ${req.path} -> /api${req.path}`);
+        // /api/ ekleyerek yönlendir
+        req.url = `/api${req.url}`;
+    }
+    next();
+});
+
 // Frontend dosyalarını servis et
 app.use(express.static(__dirname));
 
