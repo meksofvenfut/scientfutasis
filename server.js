@@ -691,7 +691,7 @@ app.post('/api/login', (req, res) => {
         
         // Kullanıcıyı veritabanında kontrol et
         const query = isPg ? 
-            `SELECT id, name, username, userType FROM users WHERE username = $1 AND password = $2` :
+            `SELECT id, name, username, userType, "userType" as usertype FROM users WHERE username = $1 AND password = $2` :
             `SELECT id, name, username, userType FROM users WHERE username = ? AND password = ?`;
         
         const params = isPg ? [username, encodedPassword] : [username, encodedPassword];
@@ -708,13 +708,16 @@ app.post('/api/login', (req, res) => {
             }
             
             console.log('Kullanıcı başarıyla giriş yaptı:', row);
-            console.log('User type:', row.userType);
+            console.log('UserType değerleri:', row.userType, row.usertype);
             
-            // Kullanıcı türünü kontrol et - 'admin' değeri yoksa ve Türkçe 'Yönetici' varsa, 'admin' olarak ayarla
-            let userTypeValue = row.userType;
-            if (userTypeValue === 'Yönetici') {
+            // Kullanıcı türünü kontrol et - PostgreSQL büyük/küçük harf duyarlılığı
+            let userTypeValue = row.userType || row.usertype || '';
+            userTypeValue = userTypeValue.toLowerCase();
+            
+            // Admin kontrolü yapılıyor
+            if (userTypeValue === 'yönetici' || userTypeValue === 'admin') {
                 userTypeValue = 'admin';
-                console.log('Türkçe "Yönetici" değeri "admin" olarak güncellendi');
+                console.log('Kullanıcı tipi "admin" olarak ayarlandı');
             }
             
             // JWT token oluştur
@@ -733,6 +736,18 @@ app.post('/api/login', (req, res) => {
                     userType: userTypeValue
                 },
                 token: token
+            });
+            
+            // Kullanıcı login zamanını güncelle
+            const loginTimeUpdateQuery = isPg ? 
+                `UPDATE users SET lastLogin = $1 WHERE id = $2` :
+                `UPDATE users SET lastLogin = ? WHERE id = ?`;
+            
+            const loginTimeParams = isPg ? [new Date().toISOString(), row.id] : [new Date().toISOString(), row.id];
+            
+            db.run(loginTimeUpdateQuery, loginTimeParams, err => {
+                if (err) console.error('Login zamanı güncellenirken hata:', err.message);
+                else console.log(`${username} kullanıcısı için login zamanı güncellendi`);
             });
         });
     } catch (error) {
