@@ -196,10 +196,11 @@ const storage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: function (req, file, cb) {
-        // Unique dosya adı oluşturma
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const fileExt = path.extname(file.originalname);
-        cb(null, uniqueSuffix + fileExt);
+        // Orijinal dosya adını koru ve karakterleri düzgün şekilde sakla
+        // Dosya adında güvenlik için zararlı karakterleri temizle
+        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        const safeName = originalName.replace(/[&\/\\#,+()$~%'":*?<>{}]/g, '_');
+        cb(null, safeName);
     }
 });
 
@@ -2481,6 +2482,91 @@ app.delete('/api/grades/delete/:id', (req, res) => {
         return res.status(500).json({ 
             success: false, 
             message: 'Sınav notu silinirken bir hata oluştu', 
+            error: error.message 
+        });
+    }
+});
+
+// 5. Sınav notu dosyasını indir
+app.get('/api/grades/download/:id', (req, res) => {
+    try {
+        const gradeId = req.params.id;
+        console.log('Sınav notu dosyası indirme isteği alındı:', gradeId);
+        
+        if (!gradeId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Dosya ID\'si gereklidir' 
+            });
+        }
+        
+        // Dosya bilgilerini getir
+        let query, params;
+        
+        if (isPg) {
+            query = `SELECT file_path, file_name FROM grades WHERE id = $1`;
+            params = [gradeId];
+        } else {
+            query = `SELECT file_path, file_name FROM grades WHERE id = ?`;
+            params = [gradeId];
+        }
+        
+        db.get(query, params, (err, row) => {
+            if (err) {
+                console.error('Dosya bilgileri alınırken hata:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            if (!row || !row.file_path) {
+                console.log(`${gradeId} ID'li sınav notuna ait dosya bulunamadı`);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Dosya bulunamadı' 
+                });
+            }
+            
+            // Eğer dosya varsa indirme işlemi başlat
+            const filePath = row.file_path;
+            const fileName = row.file_name ? Buffer.from(row.file_name, 'latin1').toString('utf8') : 'dosya';
+            
+            console.log(`Dosya indiriliyor: ${filePath} - ${fileName}`);
+            
+            // Dosyanın varlığını kontrol et
+            if (!fs.existsSync(filePath)) {
+                console.error(`Dosya fiziksel olarak bulunamadı: ${filePath}`);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Dosya fiziksel olarak bulunamadı' 
+                });
+            }
+            
+            // Dosyayı gönder
+            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+            res.setHeader('Content-Type', 'application/octet-stream');
+            
+            const fileStream = fs.createReadStream(filePath);
+            fileStream.pipe(res);
+            
+            fileStream.on('error', (error) => {
+                console.error('Dosya okuma hatası:', error);
+                if (!res.headersSent) {
+                    res.status(500).json({ 
+                        success: false, 
+                        message: 'Dosya okuma hatası', 
+                        error: error.message 
+                    });
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Dosya indirme hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
             error: error.message 
         });
     }
