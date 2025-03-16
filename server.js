@@ -1,11 +1,14 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const sqlite3 = require('sqlite3').verbose();
-const bcrypt = require('bcrypt');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const bcrypt = require('bcrypt');
+
+// Veritabanı kütüphaneleri
+const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg'); // PostgreSQL için
 
 // Türkiye zaman dilimini (Europe/Istanbul) ayarla
 process.env.TZ = 'Europe/Istanbul';
@@ -14,6 +17,89 @@ console.log('Zaman dilimi ayarlandı:', process.env.TZ);
 // Express uygulaması oluştur
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Veritabanı bağlantısı
+let db;
+let isPg = false;
+const dbType = process.env.DB_TYPE || 'sqlite';
+
+if (dbType === 'pg') {
+    // PostgreSQL bağlantısı (Render.com'da otomatik sağlanan değişkenler)
+    const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: {
+            rejectUnauthorized: false
+        }
+    });
+    
+    // Global db nesnesini tanımla (PostgreSQL uyumlu fonksiyon arayüzü)
+    db = {
+        run: (text, params, callback) => {
+            return pool.query(text, params)
+                .then(res => {
+                    if (callback) callback(null);
+                    return res;
+                })
+                .catch(err => {
+                    console.error('PostgreSQL run hatası:', err);
+                    if (callback) callback(err);
+                    return err;
+                });
+        },
+        get: (text, params, callback) => {
+            return pool.query(text, params)
+                .then(res => {
+                    if (callback) callback(null, res.rows[0]);
+                    return res.rows[0];
+                })
+                .catch(err => {
+                    console.error('PostgreSQL get hatası:', err);
+                    if (callback) callback(err);
+                    return err;
+                });
+        },
+        all: (text, params, callback) => {
+            return pool.query(text, params)
+                .then(res => {
+                    if (callback) callback(null, res.rows);
+                    return res.rows;
+                })
+                .catch(err => {
+                    console.error('PostgreSQL all hatası:', err);
+                    if (callback) callback(err);
+                    return err;
+                });
+        },
+        exec: (text, callback) => {
+            return pool.query(text)
+                .then(res => {
+                    if (callback) callback(null);
+                    return res;
+                })
+                .catch(err => {
+                    console.error('PostgreSQL exec hatası:', err);
+                    if (callback) callback(err);
+                    return err;
+                });
+        },
+        serialize: (callback) => {
+            callback(); // PostgreSQL için gerekli değil, ama uyumluluk için
+        }
+    };
+    
+    isPg = true;
+    console.log('PostgreSQL veritabanına bağlandı');
+} else {
+    // SQLite bağlantısı (geliştirme ortamı için)
+    const dbPath = path.join(__dirname, 'database', 'egitim_portal.db');
+    db = new sqlite3.Database(dbPath, (err) => {
+        if (err) {
+            console.error('Veritabanına bağlanırken hata oluştu:', err.message);
+        } else {
+            console.log('SQLite veritabanına bağlandı:', dbPath);
+        }
+    });
+}
 
 // Middlewares
 app.use(cors({
@@ -37,13 +123,6 @@ app.use('/api', (req, res, next) => {
 
 // Frontend dosyalarını servis et
 app.use(express.static(__dirname));
-
-// SQLite veritabanı bağlantısı
-const dbDir = path.join(__dirname, 'database');
-if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir);
-}
-const db = new sqlite3.Database(path.join(dbDir, 'egitim_portal.db'));
 
 // Dosya yükleme için klasör oluşturma
 const uploadDir = path.join(__dirname, 'uploads');
@@ -77,74 +156,146 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Veritabanı tablolarını oluştur
 db.serialize(() => {
-    // Kullanıcı tablosu
-    db.run(`
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            userType TEXT NOT NULL,
-            lastLogin TEXT
-        )
-    `);
+    // PostgreSQL için SQL ifadelerini ayarla
+    let userTableSQL, scheduleTableSQL, homeworkTableSQL, announcementsTableSQL, gradesTableSQL;
     
-    // Ders programı tablosu
-    db.run(`
-        CREATE TABLE IF NOT EXISTS schedule (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            userId INTEGER,
-            rowIndex INTEGER,
-            colIndex INTEGER,
-            content TEXT,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+    if (isPg) {
+        // PostgreSQL tablo oluşturma ifadeleri
+        userTableSQL = `
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                userType TEXT NOT NULL,
+                lastLogin TEXT
+            )
+        `;
+        
+        scheduleTableSQL = `
+            CREATE TABLE IF NOT EXISTS schedule (
+                id SERIAL PRIMARY KEY,
+                userId INTEGER,
+                rowIndex INTEGER,
+                colIndex INTEGER,
+                content TEXT,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        
+        homeworkTableSQL = `
+            CREATE TABLE IF NOT EXISTS homework (
+                id SERIAL PRIMARY KEY,
+                title TEXT,
+                lesson TEXT,
+                dueDate TEXT,
+                description TEXT,
+                isCompleted BOOLEAN DEFAULT FALSE,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        
+        announcementsTableSQL = `
+            CREATE TABLE IF NOT EXISTS announcements (
+                id SERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                importance TEXT DEFAULT 'normal',
+                important BOOLEAN DEFAULT FALSE,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        
+        gradesTableSQL = `
+            CREATE TABLE IF NOT EXISTS grades (
+                id SERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                lesson TEXT NOT NULL,
+                type TEXT NOT NULL,
+                file_path TEXT,
+                file_name TEXT,
+                file_size INTEGER,
+                examDate TEXT NOT NULL,
+                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+    } else {
+        // SQLite tablo oluşturma ifadeleri (mevcut ifadeler)
+        userTableSQL = `
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                userType TEXT NOT NULL,
+                lastLogin TEXT
+            )
+        `;
+        
+        scheduleTableSQL = `
+            CREATE TABLE IF NOT EXISTS schedule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                userId INTEGER,
+                rowIndex INTEGER,
+                colIndex INTEGER,
+                content TEXT,
+                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        
+        homeworkTableSQL = `
+            CREATE TABLE IF NOT EXISTS homework (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT,
+                lesson TEXT,
+                dueDate TEXT,
+                description TEXT,
+                isCompleted BOOLEAN DEFAULT 0,
+                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        
+        announcementsTableSQL = `
+            CREATE TABLE IF NOT EXISTS announcements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                importance TEXT DEFAULT 'normal',
+                important BOOLEAN DEFAULT 0,
+                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+        
+        gradesTableSQL = `
+            CREATE TABLE IF NOT EXISTS grades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                lesson TEXT NOT NULL,
+                type TEXT NOT NULL,
+                file_path TEXT,
+                file_name TEXT,
+                file_size INTEGER,
+                examDate TEXT NOT NULL,
+                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+    }
     
-    // Ödev tablosu
-    db.run(`
-        CREATE TABLE IF NOT EXISTS homework (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            lesson TEXT,
-            dueDate TEXT,
-            description TEXT,
-            isCompleted BOOLEAN DEFAULT 0,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
+    // Tabloları oluştur
+    db.run(userTableSQL);
+    db.run(scheduleTableSQL);
+    db.run(homeworkTableSQL);
+    db.run(announcementsTableSQL);
+    db.run(gradesTableSQL);
     
-    // Duyuru tablosu
-    db.run(`
-        CREATE TABLE IF NOT EXISTS announcements (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            importance TEXT DEFAULT 'normal',
-            important BOOLEAN DEFAULT 0,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-
-    // Sınav notları tablosu
-    db.run(`
-        CREATE TABLE IF NOT EXISTS grades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            lesson TEXT NOT NULL,
-            type TEXT NOT NULL,
-            file_path TEXT,
-            file_name TEXT,
-            file_size INTEGER,
-            examDate TEXT NOT NULL,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-
     // Var olan veritabanında importance sütunu var mı kontrol et
     db.all("PRAGMA table_info(announcements)", [], (err, rows) => {
         if (err) {
@@ -192,7 +343,7 @@ db.serialize(() => {
         if (err) {
             console.error('Kullanıcı tipleri kontrolü yaparken hata:', err.message);
         } else {
-            console.log('Mevcut kullanıcı tipleri:', rows.map(r => r.userType).join(', '));
+            console.log('Mevcut kullanıcı tipleri:', rows && rows.length ? rows.map(r => r.userType).join(', ') : 'Yok');
         }
     });
     
@@ -203,39 +354,72 @@ db.serialize(() => {
             return;
         }
         
-        console.log(`Veritabanında toplam ${row.count} kullanıcı mevcut.`);
+        const count = row ? (row.count || 0) : 0;
+        console.log(`Veritabanında toplam ${count} kullanıcı mevcut.`);
         
         // Hiç kullanıcı yoksa veya çok az varsa yönetici ekleyelim
-        if (row.count < 2) {
+        if (count < 2) {
             console.log('Az sayıda kullanıcı var, yönetici ekleme işlemi yapılacak...');
             
             // Base64 ile şifreleme (123456 şifresini Base64'e çeviriyoruz)
             const password = Buffer.from('123456').toString('base64');
             
             // Hem "Yönetici" hem de "admin" tipiyle oluşturalım
-            db.run(
-                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
-                ['MEK Admin', 'MEK', password, 'Yönetici'],
-                function(err) {
+            if (isPg) {
+                // PostgreSQL için
+                const insertYoneticiSQL = `
+                    INSERT INTO users (name, username, password, userType)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (username) DO NOTHING
+                `;
+                
+                db.run(insertYoneticiSQL, ['MEK Admin', 'MEK', password, 'Yönetici'], function(err) {
                     if (err) {
                         console.error('Varsayılan Yönetici kullanıcısı oluştururken hata:', err.message);
                     } else {
                         console.log('Varsayılan Yönetici kullanıcısı oluşturuldu: MEK');
                     }
-                }
-            );
-            
-            db.run(
-                `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
-                ['MEK Admin', 'admin', password, 'admin'],
-                function(err) {
+                });
+                
+                const insertAdminSQL = `
+                    INSERT INTO users (name, username, password, userType)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (username) DO NOTHING
+                `;
+                
+                db.run(insertAdminSQL, ['MEK Admin', 'admin', password, 'admin'], function(err) {
                     if (err) {
                         console.error('Varsayılan admin kullanıcısı oluştururken hata:', err.message);
                     } else {
                         console.log('Varsayılan admin kullanıcısı oluşturuldu: admin');
                     }
-                }
-            );
+                });
+            } else {
+                // SQLite için
+                db.run(
+                    `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                    ['MEK Admin', 'MEK', password, 'Yönetici'],
+                    function(err) {
+                        if (err) {
+                            console.error('Varsayılan Yönetici kullanıcısı oluştururken hata:', err.message);
+                        } else {
+                            console.log('Varsayılan Yönetici kullanıcısı oluşturuldu: MEK');
+                        }
+                    }
+                );
+                
+                db.run(
+                    `INSERT OR IGNORE INTO users (name, username, password, userType) VALUES (?, ?, ?, ?)`,
+                    ['MEK Admin', 'admin', password, 'admin'],
+                    function(err) {
+                        if (err) {
+                            console.error('Varsayılan admin kullanıcısı oluştururken hata:', err.message);
+                        } else {
+                            console.log('Varsayılan admin kullanıcısı oluşturuldu: admin');
+                        }
+                    }
+                );
+            }
         }
     });
 });
@@ -380,8 +564,17 @@ app.post('/api/login', (req, res) => {
     
     console.log(`Giriş denemesi - Kullanıcı: ${username}, Tip: ${userType} - Zaman: ${getTurkishTimeString()}`);
 
-    const query = `SELECT * FROM users WHERE username = ? AND userType = ?`;
-    db.get(query, [username, userType], (err, user) => {
+    let query, params;
+    
+    if (isPg) {
+        query = `SELECT * FROM users WHERE username = $1 AND userType = $2`;
+        params = [username, userType];
+    } else {
+        query = `SELECT * FROM users WHERE username = ? AND userType = ?`;
+        params = [username, userType];
+    }
+    
+    db.get(query, params, (err, user) => {
         if (err) {
             console.error('Giriş yapılırken veritabanı hatası:', err.message);
             return res.status(500).json({ error: 'Veritabanı hatası' });
@@ -402,27 +595,33 @@ app.post('/api/login', (req, res) => {
         
         // Son giriş zamanını güncelle
         const now = new Date().toISOString();
-        db.run(`UPDATE users SET lastLogin = ? WHERE id = ?`, [now, user.id], function(err) {
+        
+        let updateQuery, updateParams;
+        
+        if (isPg) {
+            updateQuery = `UPDATE users SET lastLogin = $1 WHERE id = $2`;
+            updateParams = [now, user.id];
+        } else {
+            updateQuery = `UPDATE users SET lastLogin = ? WHERE id = ?`;
+            updateParams = [now, user.id];
+        }
+        
+        db.run(updateQuery, updateParams, function(err) {
             if (err) {
-                console.error(`Son giriş zamanı güncellenirken hata - Kullanıcı ID: ${user.id}:`, err.message);
-                // Bu hatayı kullanıcıya yansıtmıyoruz, sadece logluyoruz
+                console.error('Son giriş zamanı güncellenirken hata:', err.message);
             }
-        });
-
-        // Kullanıcı bilgilerini temizle (şifre dışarı çıkmasın)
-        delete user.password;
-        
-        console.log(`Başarılı giriş - Kullanıcı: ${user.name}, Tip: ${user.userType}`);
-        
-        res.json({ 
-            success: true, 
-            message: 'Giriş başarılı',
-            user: {
-                id: user.id,
-                name: user.name,
-                username: user.username,
-                userType: user.userType
-            }
+            
+            // Kullanıcı bilgilerini döndür
+            console.log(`Başarılı giriş - Kullanıcı: ${username}, Tip: ${userType}`);
+            res.json({
+                success: true,
+                user: {
+                    id: user.id,
+                    name: user.name || username,
+                    username: user.username,
+                    userType: user.userType
+                }
+            });
         });
     });
 });
