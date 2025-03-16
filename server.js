@@ -1420,3 +1420,375 @@ app.get('/api/init-data', (req, res) => {
         });
     }
 });
+
+// Debug endpoint - veritabanı durumunu kontrol etmek için
+app.get('/api/debug/db-status', (req, res) => {
+    console.log('Veritabanı durumu kontrol ediliyor...');
+    
+    try {
+        const result = {
+            dbType: isPg ? 'PostgreSQL' : 'SQLite',
+            tables: {},
+            timestamp: new Date().toISOString()
+        };
+        
+        // Tabloları listeleme sorgusu
+        let tablesQuery;
+        if (isPg) {
+            tablesQuery = `
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public'
+            `;
+        } else {
+            tablesQuery = `
+                SELECT name as table_name
+                FROM sqlite_master 
+                WHERE type='table'
+                AND name NOT LIKE 'sqlite_%'
+            `;
+        }
+        
+        db.all(tablesQuery, [], (err, tables) => {
+            if (err) {
+                console.error('Tablo listesi alınırken hata:', err);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Veritabanı tabloları listelenirken hata oluştu',
+                    details: err.message
+                });
+            }
+            
+            if (!tables || tables.length === 0) {
+                return res.json({
+                    success: true,
+                    message: 'Veritabanında hiç tablo bulunamadı',
+                    dbType: result.dbType
+                });
+            }
+            
+            let processedTables = 0;
+            
+            tables.forEach(table => {
+                const tableName = table.table_name;
+                
+                // Sistem tablolarını atla
+                if (tableName.startsWith('pg_') || 
+                    tableName.startsWith('sql_') || 
+                    tableName === 'sqlite_sequence' ||
+                    tableName.includes('information_schema')) {
+                    processedTables++;
+                    return;
+                }
+                
+                // Her tablo için kayıt sayısını al
+                const countQuery = isPg ?
+                    `SELECT COUNT(*) as count FROM "${tableName}"` :
+                    `SELECT COUNT(*) as count FROM ${tableName}`;
+                
+                db.get(countQuery, [], (err, countResult) => {
+                    if (err) {
+                        console.error(`${tableName} tablosu kayıt sayısı alınırken hata:`, err);
+                        result.tables[tableName] = {
+                            error: 'Kayıt sayısı alınamadı: ' + err.message
+                        };
+                    } else {
+                        const recordCount = countResult.count;
+                        result.tables[tableName] = {
+                            recordCount: recordCount
+                        };
+                        
+                        // İlk 5 kaydı al
+                        if (recordCount > 0) {
+                            const recordsQuery = isPg ?
+                                `SELECT * FROM "${tableName}" LIMIT 5` :
+                                `SELECT * FROM ${tableName} LIMIT 5`;
+                            
+                            db.all(recordsQuery, [], (err, records) => {
+                                if (err) {
+                                    console.error(`${tableName} tablosu kayıtları alınırken hata:`, err);
+                                    result.tables[tableName].sampleRecords = 'Kayıtlar alınamadı';
+                                } else {
+                                    result.tables[tableName].sampleRecords = records;
+                                }
+                                
+                                processedTables++;
+                                if (processedTables === tables.length) {
+                                    res.json({
+                                        success: true,
+                                        dbStatus: result
+                                    });
+                                }
+                            });
+                        } else {
+                            result.tables[tableName].sampleRecords = [];
+                            
+                            processedTables++;
+                            if (processedTables === tables.length) {
+                                res.json({
+                                    success: true,
+                                    dbStatus: result
+                                });
+                            }
+                        }
+                    }
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Veritabanı durum bilgisi alınırken hata:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Sunucu hatası',
+            details: error.message
+        });
+    }
+});
+
+// Örnek ders programı verilerini ekle
+function addScheduleExamples() {
+    console.log('Ders programı örnek kayıtları ekleniyor...');
+    
+    // Örnek ders programı verileri
+    const scheduleData = [
+        { userId: 1, rowIndex: 1, colIndex: 1, content: "Matematik" },
+        { userId: 1, rowIndex: 1, colIndex: 2, content: "Fen Bilgisi" },
+        { userId: 1, rowIndex: 1, colIndex: 3, content: "Türkçe" },
+        { userId: 1, rowIndex: 1, colIndex: 4, content: "Sosyal Bilgiler" },
+        { userId: 1, rowIndex: 1, colIndex: 5, content: "İngilizce" },
+        { userId: 1, rowIndex: 2, colIndex: 1, content: "Türkçe" },
+        { userId: 1, rowIndex: 2, colIndex: 2, content: "Matematik" },
+        { userId: 1, rowIndex: 2, colIndex: 3, content: "Beden Eğitimi" },
+        { userId: 1, rowIndex: 2, colIndex: 4, content: "Fen Bilgisi" },
+        { userId: 1, rowIndex: 2, colIndex: 5, content: "Görsel Sanatlar" }
+    ];
+    
+    const now = new Date().toISOString();
+    
+    // Her kayıt için veritabanına ekle
+    scheduleData.forEach(item => {
+        try {
+            if (isPg) {
+                // PostgreSQL için
+                const query = `
+                    INSERT INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (userId, rowIndex, colIndex) DO UPDATE SET content = $4, updatedAt = $6
+                `;
+                db.run(query, [item.userId, item.rowIndex, item.colIndex, item.content, now, now], err => {
+                    if (err) console.error('Ders programı kaydı eklenirken hata:', err.message);
+                });
+            } else {
+                // SQLite için
+                const query = `
+                    INSERT OR REPLACE INTO schedule (userId, rowIndex, colIndex, content, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `;
+                db.run(query, [item.userId, item.rowIndex, item.colIndex, item.content], err => {
+                    if (err) console.error('Ders programı kaydı eklenirken hata:', err.message);
+                });
+            }
+        } catch (error) {
+            console.error('Ders programı kaydı eklenirken hata:', error);
+        }
+    });
+    
+    console.log('Ders programı örnek kayıtları eklendi.');
+}
+
+// Örnek ödev verilerini ekle
+function addHomeworkExamples() {
+    console.log('Ödev örnek kayıtları ekleniyor...');
+    
+    // Bugünün tarihini al ve örnek ödevler için tarih oluştur
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    
+    // Örnek ödev verileri
+    const homeworkData = [
+        { 
+            title: "Matematik Çalışma Sayfası", 
+            lesson: "Matematik", 
+            dueDate: tomorrow.toISOString().split('T')[0],
+            description: "Sayfa 42-45 arası problemleri çözün"
+        },
+        { 
+            title: "Türkçe Kompozisyon", 
+            lesson: "Türkçe", 
+            dueDate: nextWeek.toISOString().split('T')[0],
+            description: "Hayalinizdeki meslek hakkında bir kompozisyon yazın."
+        },
+        { 
+            title: "Fen Bilgisi Projesi", 
+            lesson: "Fen Bilgisi", 
+            dueDate: nextWeek.toISOString().split('T')[0],
+            description: "Güneş sistemi maketi hazırlayın."
+        }
+    ];
+    
+    const now = new Date().toISOString();
+    
+    // Her kayıt için veritabanına ekle
+    homeworkData.forEach(item => {
+        try {
+            if (isPg) {
+                // PostgreSQL için
+                const query = `
+                    INSERT INTO homework (title, lesson, dueDate, description, isCompleted, createdAt, updatedAt)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (title, lesson) DO NOTHING
+                `;
+                db.run(query, [item.title, item.lesson, item.dueDate, item.description, false, now, now], err => {
+                    if (err) console.error('Ödev kaydı eklenirken hata:', err.message);
+                });
+            } else {
+                // SQLite için
+                const query = `
+                    INSERT OR IGNORE INTO homework (title, lesson, dueDate, description, isCompleted, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `;
+                db.run(query, [item.title, item.lesson, item.dueDate, item.description, 0], err => {
+                    if (err) console.error('Ödev kaydı eklenirken hata:', err.message);
+                });
+            }
+        } catch (error) {
+            console.error('Ödev kaydı eklenirken hata:', error);
+        }
+    });
+    
+    console.log('Ödev örnek kayıtları eklendi.');
+}
+
+// Örnek duyuru verilerini ekle
+function addAnnouncementExamples() {
+    console.log('Duyuru örnek kayıtları ekleniyor...');
+    
+    // Örnek duyuru verileri
+    const announcementData = [
+        { 
+            title: "Veli Toplantısı", 
+            content: "Önümüzdeki Cuma günü saat 15:00'te okul salonunda veli toplantısı yapılacaktır. Tüm velilerimizin katılımını bekliyoruz.",
+            importance: "important" 
+        },
+        { 
+            title: "Okul Gezisi", 
+            content: "Gelecek hafta Çarşamba günü Bilim Merkezi'ne gezi düzenlenecektir. İzin formlarını Pazartesi gününe kadar teslim ediniz.",
+            importance: "normal" 
+        },
+        { 
+            title: "Yarıyıl Tatili", 
+            content: "Yarıyıl tatili 22 Ocak - 5 Şubat tarihleri arasında olacaktır. Tüm öğrencilerimize iyi tatiller dileriz.",
+            importance: "normal" 
+        }
+    ];
+    
+    const now = new Date().toISOString();
+    
+    // Her kayıt için veritabanına ekle
+    announcementData.forEach(item => {
+        try {
+            if (isPg) {
+                // PostgreSQL için
+                const query = `
+                    INSERT INTO announcements (title, content, importance, createdAt, updatedAt)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (title) DO NOTHING
+                `;
+                db.run(query, [item.title, item.content, item.importance, now, now], err => {
+                    if (err) console.error('Duyuru kaydı eklenirken hata:', err.message);
+                });
+            } else {
+                // SQLite için
+                const query = `
+                    INSERT OR IGNORE INTO announcements (title, content, importance, createdAt, updatedAt)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `;
+                db.run(query, [item.title, item.content, item.importance], err => {
+                    if (err) console.error('Duyuru kaydı eklenirken hata:', err.message);
+                });
+            }
+        } catch (error) {
+            console.error('Duyuru kaydı eklenirken hata:', error);
+        }
+    });
+    
+    console.log('Duyuru örnek kayıtları eklendi.');
+}
+
+// Örnek not verilerini ekle
+function addGradeExamples() {
+    console.log('Not örnek kayıtları ekleniyor...');
+    
+    // Bugünün tarihini al
+    const today = new Date();
+    const lastMonth = new Date(today);
+    lastMonth.setMonth(today.getMonth() - 1);
+    
+    // Örnek not verileri
+    const gradeData = [
+        { 
+            title: "Matematik 1. Sınav", 
+            lesson: "Matematik", 
+            type: "Yazılı Sınav", 
+            examDate: lastMonth.toISOString().split('T')[0]
+        },
+        { 
+            title: "Türkçe 1. Sınav", 
+            lesson: "Türkçe", 
+            type: "Yazılı Sınav", 
+            examDate: lastMonth.toISOString().split('T')[0]
+        },
+        { 
+            title: "Fen Bilgisi Proje", 
+            lesson: "Fen Bilgisi", 
+            type: "Proje", 
+            examDate: today.toISOString().split('T')[0]
+        }
+    ];
+    
+    const now = new Date().toISOString();
+    
+    // Her kayıt için veritabanına ekle
+    gradeData.forEach(item => {
+        try {
+            if (isPg) {
+                // PostgreSQL için
+                const query = `
+                    INSERT INTO grades (title, lesson, type, examDate, createdAt, updatedAt)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (title, lesson) DO NOTHING
+                `;
+                db.run(query, [item.title, item.lesson, item.type, item.examDate, now, now], err => {
+                    if (err) console.error('Not kaydı eklenirken hata:', err.message);
+                });
+            } else {
+                // SQLite için
+                const query = `
+                    INSERT OR IGNORE INTO grades (title, lesson, type, examDate, createdAt, updatedAt)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                `;
+                db.run(query, [item.title, item.lesson, item.type, item.examDate], err => {
+                    if (err) console.error('Not kaydı eklenirken hata:', err.message);
+                });
+            }
+        } catch (error) {
+            console.error('Not kaydı eklenirken hata:', error);
+        }
+    });
+    
+    console.log('Not örnek kayıtları eklendi.');
+}
+
+// Frontend dosyalarını servis et - tüm rotalar için catch-all
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Sunucuyu dinlemeye başla
+app.listen(PORT, () => {
+    console.log(`Server ${PORT} portunda çalışıyor...`);
+    console.log(`http://localhost:${PORT} adresinden erişebilirsiniz`);
+});
