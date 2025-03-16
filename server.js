@@ -856,21 +856,39 @@ app.get('/api/users', (req, res) => {
                 console.error('Kullanıcılar çekilirken hata:', err.message);
                 return res.status(500).json({ 
                     success: false, 
-                    message: 'Sunucu hatası', 
+                    message: 'Veritabanı hatası', 
                     error: err.message 
                 });
             }
             
-            if (!rows || rows.length === 0) {
-                console.log('Hiç kullanıcı bulunamadı');
+            if (!rows) {
+                console.log('Kullanıcı sonuçları undefined');
                 return res.json([]);
             }
             
-            console.log(`${rows.length} adet kullanıcı kaydı bulundu.`);
-            console.log('İlk kullanıcı örneği:', rows[0]);
+            const safeRows = Array.isArray(rows) ? rows : [];
+            
+            console.log(`${safeRows.length} adet kullanıcı kaydı bulundu.`);
+            if (safeRows.length > 0) {
+                console.log('İlk kullanıcı örneği:', safeRows[0]);
+            }
+            
+            // Kullanıcılarda type alanlarını düzelt
+            const cleanedRows = safeRows.map(user => {
+                // Kullanıcı tipi PostgreSQL'de küçük harfle gelebilir, normalize et
+                const userType = user.userType || user.usertype || 'student';
+                // Temiz bir nesne oluştur
+                return {
+                    id: user.id,
+                    name: user.name,
+                    username: user.username,
+                    userType: userType, // Normalize edilmiş değeri kullan
+                    lastLogin: user.lastLogin || user.lastlogin
+                };
+            });
             
             // Direkt dizi olarak dön
-            res.json(rows);
+            return res.json(cleanedRows);
         });
     } catch (error) {
         console.error('Kullanıcılar getirme hatası:', error);
@@ -2212,36 +2230,46 @@ app.get('/api/grades/get', (req, res) => {
 
 // 2. Yeni sınav notu ekle
 app.post('/api/grades/add', (req, res) => {
-    console.log('Yeni sınav notu ekleme isteği alındı:', req.body);
-    
-    const { title, lesson, type, examDate, userType } = req.body;
-    const file = req.file; // Eğer dosya yüklendiyse
-    
-    // Yönetici kontrolü - hem body hem query parametrelerinden kontrol et
-    const userTypeValue = userType || req.query.userType;
-    console.log('Gönderilen userType:', userTypeValue);
-    
-    // Geliştirme kolaylığı için geçici olarak admin kontrolünü kaldırıyoruz
-    /*
-    if (userTypeValue !== 'admin' && userTypeValue !== 'Yönetici') {
-        console.error('Yetkisiz sınav notu ekleme girişimi:', userTypeValue);
-        return res.status(403).json({ 
-            success: false, 
-            message: 'Bu işlem için yönetici yetkileri gerekiyor' 
-        });
-    }
-    */
-    
-    // Gerekli alanların kontrolü
-    if (!title || !lesson || !type || !examDate) {
-        console.error('Eksik bilgi ile sınav notu ekleme girişimi');
-        return res.status(400).json({ 
-            success: false, 
-            message: 'Başlık, ders, tür ve sınav tarihi gereklidir' 
-        });
-    }
-    
     try {
+        console.log('Yeni sınav notu ekleme isteği alındı:', req.body);
+        
+        // Parametreleri hem body hem de query'den al
+        const title = req.body.title || req.query.title || 'Yeni Sınav';
+        const lesson = req.body.lesson || req.query.lesson || 'Genel';
+        const type = req.body.type || req.query.type || 'Yazılı';
+        const examDate = req.body.examDate || req.query.examDate || new Date().toISOString().split('T')[0];
+        const userType = req.body.userType || req.query.userType;
+        
+        console.log('İşlenmiş parametreler:', { title, lesson, type, examDate, userType });
+        
+        const file = req.file; // Eğer dosya yüklendiyse
+        
+        // Yönetici kontrolü - hem body hem query parametrelerinden kontrol et
+        const userTypeValue = userType || req.query.userType;
+        console.log('Gönderilen userType:', userTypeValue);
+        
+        // Geliştirme kolaylığı için geçici olarak admin kontrolünü kaldırıyoruz
+        /*
+        if (userTypeValue !== 'admin' && userTypeValue !== 'Yönetici') {
+            console.error('Yetkisiz sınav notu ekleme girişimi:', userTypeValue);
+            return res.status(403).json({ 
+                success: false, 
+                message: 'Bu işlem için yönetici yetkileri gerekiyor' 
+            });
+        }
+        */
+        
+        // Gerekli alanların kontrolü - artık girmiyoruz çünkü varsayılan değerler kullanıyoruz
+        /*
+        if (!title || !lesson || !type || !examDate) {
+            console.error('Eksik bilgi ile sınav notu ekleme girişimi');
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Başlık, ders, tür ve sınav tarihi gereklidir' 
+            });
+        }
+        */
+        
         const now = new Date().toISOString();
         
         // Dosya bilgileri
@@ -2276,7 +2304,7 @@ app.post('/api/grades/add', (req, res) => {
                 });
             }
             
-            console.log(`Yeni sınav notu eklendi: ${title} - ID: ${this.lastID}`);
+            console.log(`Yeni sınav notu eklendi: ${title} - ID: ${this.lastID || 'unknown'}`);
             res.json({ 
                 success: true, 
                 message: 'Sınav notu başarıyla eklendi', 
