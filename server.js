@@ -91,6 +91,18 @@ if (isPg) {
         },
         serialize: (callback) => {
             callback(); // PostgreSQL için gerekli değil, ama uyumluluk için
+        },
+        query: (text, params, callback) => {
+            return pool.query(text, params)
+                .then(res => {
+                    if (callback) callback(null, res);
+                    return res;
+                })
+                .catch(err => {
+                    console.error('PostgreSQL query hatası:', err);
+                    if (callback) callback(err);
+                    return err;
+                });
         }
     };
     
@@ -3033,53 +3045,83 @@ function cleanupOverdueHomework() {
             // PostgreSQL için sadece bugünden önceki tarihleri sorgula (bugün hariç)
             checkQuery = `SELECT id, title, "dueDate" FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
             checkParams = [today];
-        } else {
-            checkQuery = `SELECT id, title, dueDate FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-            checkParams = [today];
-        }
-        
-        console.log('Otomatik Temizleme SQL Sorgusu:', checkQuery);
-        console.log('Otomatik Temizleme SQL Parametreler:', checkParams);
-        
-        db.all(checkQuery, checkParams, (err, rows) => {
-            if (err) {
-                console.error('Silinecek ödevleri kontrol ederken hata:', err.message);
-                console.error('Otomatik Temizleme SQL Sorgusu:', checkQuery);
-                console.error('Otomatik Temizleme SQL Parametreler:', checkParams);
-                return;
-            }
             
-            console.log(`Silinecek ${rows.length} adet ödev bulundu:`, rows);
-            
-            // Eğer silinecek ödev varsa silme işlemini yap
-            if (rows.length > 0) {
-                let query, params;
-                
-                if (dbType === 'postgresql') {
-                    query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
-                    params = [today];
-                } else {
-                    query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-                    params = [today];
+            // PostgreSQL için özel işleyici
+            db.query(checkQuery, checkParams, (err, result) => {
+                if (err) {
+                    console.error('Silinecek ödevleri kontrol ederken hata:', err.message);
+                    console.error('Otomatik Temizleme SQL Sorgusu:', checkQuery);
+                    console.error('Otomatik Temizleme SQL Parametreler:', checkParams);
+                    return;
                 }
                 
-                console.log('Otomatik Temizleme SQL Silme Sorgusu:', query);
-                console.log('Otomatik Temizleme SQL Silme Parametreleri:', params);
+                const rows = result.rows || [];
+                console.log(`Silinecek ${rows.length} adet ödev bulundu:`, rows);
                 
-                db.run(query, params, function(err) {
-                    if (err) {
-                        console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
-                        console.error('Otomatik Temizleme SQL Silme Sorgusu:', query);
-                        console.error('Otomatik Temizleme SQL Silme Parametreleri:', params);
-                        return;
-                    }
+                // Eğer silinecek ödev varsa silme işlemini yap
+                if (rows.length > 0) {
+                    let query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
+                    let params = [today];
                     
-                    console.log(`Temizleme tamamlandı. ${this.changes} adet süresi geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
-                });
-            } else {
-                console.log('Silinecek süresi geçmiş ödev bulunamadı');
-            }
-        });
+                    console.log('Otomatik Temizleme SQL Silme Sorgusu:', query);
+                    console.log('Otomatik Temizleme SQL Silme Parametreleri:', params);
+                    
+                    db.query(query, params, (err, result) => {
+                        if (err) {
+                            console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
+                            console.error('Otomatik Temizleme SQL Silme Sorgusu:', query);
+                            console.error('Otomatik Temizleme SQL Silme Parametreleri:', params);
+                            return;
+                        }
+                        
+                        const rowCount = result.rowCount || 0;
+                        console.log(`Temizleme tamamlandı. ${rowCount} adet süresi geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+                    });
+                } else {
+                    console.log('Silinecek süresi geçmiş ödev bulunamadı');
+                }
+            });
+        } else {
+            // SQLite için normal işleyici
+            checkQuery = `SELECT id, title, dueDate FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+            checkParams = [today];
+            
+            console.log('Otomatik Temizleme SQL Sorgusu:', checkQuery);
+            console.log('Otomatik Temizleme SQL Parametreler:', checkParams);
+            
+            db.all(checkQuery, checkParams, (err, rows) => {
+                if (err) {
+                    console.error('Silinecek ödevleri kontrol ederken hata:', err.message);
+                    console.error('Otomatik Temizleme SQL Sorgusu:', checkQuery);
+                    console.error('Otomatik Temizleme SQL Parametreler:', checkParams);
+                    return;
+                }
+                
+                console.log(`Silinecek ${rows.length} adet ödev bulundu:`, rows);
+                
+                // Eğer silinecek ödev varsa silme işlemini yap
+                if (rows.length > 0) {
+                    let query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+                    let params = [today];
+                    
+                    console.log('Otomatik Temizleme SQL Silme Sorgusu:', query);
+                    console.log('Otomatik Temizleme SQL Silme Parametreleri:', params);
+                    
+                    db.run(query, params, function(err) {
+                        if (err) {
+                            console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
+                            console.error('Otomatik Temizleme SQL Silme Sorgusu:', query);
+                            console.error('Otomatik Temizleme SQL Silme Parametreleri:', params);
+                            return;
+                        }
+                        
+                        console.log(`Temizleme tamamlandı. ${this.changes} adet süresi geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+                    });
+                } else {
+                    console.log('Silinecek süresi geçmiş ödev bulunamadı');
+                }
+            });
+        }
     } catch (error) {
         console.error('Süresi geçmiş ödevleri temizlerken beklenmeyen hata:', error);
     }
@@ -3139,71 +3181,117 @@ app.post('/api/homework/cleanup', (req, res) => {
             // PostgreSQL için sadece bugünden önceki tarihleri sorgula (bugün hariç)
             checkQuery = `SELECT id, title, "dueDate" FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
             checkParams = [today];
-        } else {
-            checkQuery = `SELECT id, title, dueDate FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-            checkParams = [today];
-        }
-        
-        console.log('SQL Sorgusu:', checkQuery);
-        console.log('SQL Parametreler:', checkParams);
-        
-        db.all(checkQuery, checkParams, (err, rows) => {
-            if (err) {
-                console.error('API - Silinecek ödevleri kontrol ederken hata:', err.message);
-                console.error('SQL Sorgusu:', checkQuery);
-                console.error('SQL Parametreler:', checkParams);
-                return res.status(500).json({ 
-                    success: false, 
-                    message: 'Ödevler kontrol edilirken bir hata oluştu',
-                    error: err.message
-                });
-            }
             
-            console.log(`API - Silinecek ${rows.length} adet ödev bulundu:`, rows);
-            
-            // Eğer silinecek ödev varsa silme işlemini yap
-            if (rows.length > 0) {
-                let query, params;
-                
-                if (dbType === 'postgresql') {
-                    // PostgreSQL için AND operatöründen önce ve sonra boşluklar olmalı
-                    query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
-                    params = [today];
-                } else {
-                    query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-                    params = [today];
+            // PostgreSQL için özel işleyici
+            db.query(checkQuery, checkParams, (err, result) => {
+                if (err) {
+                    console.error('API - Silinecek ödevleri kontrol ederken hata:', err.message);
+                    console.error('SQL Sorgusu:', checkQuery);
+                    console.error('SQL Parametreler:', checkParams);
+                    return res.status(500).json({ 
+                        success: false, 
+                        message: 'Ödevler kontrol edilirken bir hata oluştu',
+                        error: err.message
+                    });
                 }
                 
-                console.log('SQL Silme Sorgusu:', query);
-                console.log('SQL Silme Parametreleri:', params);
+                const rows = result.rows || [];
+                console.log(`API - Silinecek ${rows.length} adet ödev bulundu:`, rows);
                 
-                db.run(query, params, function(err) {
-                    if (err) {
-                        console.error('API - Süresi geçmiş ödevleri temizlerken hata:', err.message);
-                        console.error('SQL Silme Sorgusu:', query);
-                        console.error('SQL Silme Parametreleri:', params);
-                        return res.status(500).json({ 
-                            success: false, 
-                            message: 'Ödevler temizlenirken bir hata oluştu',
-                            error: err.message
+                // Eğer silinecek ödev varsa silme işlemini yap
+                if (rows.length > 0) {
+                    let query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
+                    let params = [today];
+                    
+                    console.log('SQL Silme Sorgusu:', query);
+                    console.log('SQL Silme Parametreleri:', params);
+                    
+                    db.query(query, params, (err, result) => {
+                        if (err) {
+                            console.error('API - Süresi geçmiş ödevleri temizlerken hata:', err.message);
+                            console.error('SQL Silme Sorgusu:', query);
+                            console.error('SQL Silme Parametreleri:', params);
+                            return res.status(500).json({ 
+                                success: false, 
+                                message: 'Ödevler temizlenirken bir hata oluştu',
+                                error: err.message
+                            });
+                        }
+                        
+                        const rowCount = result.rowCount || 0;
+                        console.log(`API - Temizleme tamamlandı. ${rowCount} adet süresi geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+                        
+                        return res.json({ 
+                            success: true, 
+                            message: `${rowCount} adet süresi geçmiş ödev silindi`
                         });
-                    }
-                    
-                    console.log(`API - Temizleme tamamlandı. ${this.changes} adet süresi geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
-                    
-                    return res.json({ 
-                        success: true, 
-                        message: `${this.changes} adet süresi geçmiş ödev silindi`
                     });
-                });
-            } else {
-                console.log('API - Silinecek süresi geçmiş ödev bulunamadı');
-                return res.json({
-                    success: true,
-                    message: 'Silinecek süresi geçmiş ödev bulunamadı'
-                });
-            }
-        });
+                } else {
+                    console.log('API - Silinecek süresi geçmiş ödev bulunamadı');
+                    return res.json({
+                        success: true,
+                        message: 'Silinecek süresi geçmiş ödev bulunamadı'
+                    });
+                }
+            });
+        } else {
+            // SQLite için normal işleyici
+            checkQuery = `SELECT id, title, dueDate FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+            checkParams = [today];
+            
+            console.log('SQL Sorgusu:', checkQuery);
+            console.log('SQL Parametreler:', checkParams);
+            
+            db.all(checkQuery, checkParams, (err, rows) => {
+                if (err) {
+                    console.error('API - Silinecek ödevleri kontrol ederken hata:', err.message);
+                    console.error('SQL Sorgusu:', checkQuery);
+                    console.error('SQL Parametreler:', checkParams);
+                    return res.status(500).json({ 
+                        success: false, 
+                        message: 'Ödevler kontrol edilirken bir hata oluştu',
+                        error: err.message
+                    });
+                }
+                
+                console.log(`API - Silinecek ${rows.length} adet ödev bulundu:`, rows);
+                
+                // Eğer silinecek ödev varsa silme işlemini yap
+                if (rows.length > 0) {
+                    let query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+                    let params = [today];
+                    
+                    console.log('SQL Silme Sorgusu:', query);
+                    console.log('SQL Silme Parametreleri:', params);
+                    
+                    db.run(query, params, function(err) {
+                        if (err) {
+                            console.error('API - Süresi geçmiş ödevleri temizlerken hata:', err.message);
+                            console.error('SQL Silme Sorgusu:', query);
+                            console.error('SQL Silme Parametreleri:', params);
+                            return res.status(500).json({ 
+                                success: false, 
+                                message: 'Ödevler temizlenirken bir hata oluştu',
+                                error: err.message
+                            });
+                        }
+                        
+                        console.log(`API - Temizleme tamamlandı. ${this.changes} adet süresi geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+                        
+                        return res.json({ 
+                            success: true, 
+                            message: `${this.changes} adet süresi geçmiş ödev silindi`
+                        });
+                    });
+                } else {
+                    console.log('API - Silinecek süresi geçmiş ödev bulunamadı');
+                    return res.json({
+                        success: true,
+                        message: 'Silinecek süresi geçmiş ödev bulunamadı'
+                    });
+                }
+            });
+        }
     } catch (error) {
         console.error('API - Süresi geçmiş ödevleri temizlerken beklenmeyen hata:', error);
         return res.status(500).json({ 

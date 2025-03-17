@@ -730,7 +730,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Ödevleri sunucudan çek
         fetch('/api/homework/get')
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 homeworkData = data;
                 
@@ -765,7 +770,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         .then(response => {
                             // Önce response'un başarılı olup olmadığını kontrol edelim
                             if (!response.ok) {
-                                throw new Error(`HTTP error! Status: ${response.status}`);
+                                // Sunucu hatası durumunda daha fazla bilgi almak için yanıtı json olarak almaya çalış
+                                return response.json().then(err => {
+                                    throw new Error(`Server error! Status: ${response.status}, Message: ${err.message || 'Bilinmeyen hata'}`);
+                                }).catch(jsonErr => {
+                                    // JSON çözümlenemezse orijinal hatayı fırlat
+                                    throw new Error(`HTTP error! Status: ${response.status}`);
+                                });
                             }
                             return response.json();
                         })
@@ -782,11 +793,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         })
                         .catch(error => {
                             console.error('Süresi geçmiş ödevleri temizlerken hata:', error);
+                            // Hata durumunu göster
+                            showNotification('Süresi geçmiş ödevler temizlenirken hata oluştu. Lütfen sayfayı yenileyin.', 'error');
                             // Hata oluştuğunda ödevleri göster
                             displayHomeworks();
                         });
                     } catch (e) {
                         console.error('Temizleme isteği gönderilirken beklenmeyen hata:', e);
+                        showNotification('Sunucu iletişim hatası. Lütfen bağlantınızı kontrol edin.', 'error');
                         // Herhangi bir hata durumunda ödevleri göstermeye devam et
                         displayHomeworks();
                     }
@@ -797,7 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showNotification('Ödevler yüklenirken bir hata oluştu!', 'error');
                 
                 if (homeworkCards) {
-                    homeworkCards.innerHTML = '<div class="error-message">Ödevler yüklenirken bir hata oluştu!</div>';
+                    homeworkCards.innerHTML = '<div class="error-message">Ödevler yüklenirken bir hata oluştu! Lütfen sayfayı yenileyin.</div>';
                 }
             });
     }
