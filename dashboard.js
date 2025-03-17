@@ -753,32 +753,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (overdueTasks.length > 0) {
                     console.log(`${overdueTasks.length} adet süresi 1 günden fazla geçmiş ödev bulundu. Bu ödevler sunucu tarafından otomatik olarak silinecektir.`);
                     
-                    // Sunucuya süresi geçmiş ödevleri silme isteği gönder
-                    fetch('/api/homework/cleanup', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                    .then(response => {
-                        // Önce response'un başarılı olup olmadığını kontrol edelim
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! Status: ${response.status}`);
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data && data.success) {
-                            console.log('Süresi geçmiş ödevler temizlendi:', data.message);
-                            // Ödevleri yeniden yükle
-                            fetchHomeworks();
-                        } else {
-                            console.error('Süresi geçmiş ödevleri temizlerken hata:', data?.message || 'Bilinmeyen hata');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Süresi geçmiş ödevleri temizlerken hata:', error);
-                    });
+                    try {
+                        // Sunucuya süresi geçmiş ödevleri silme isteği gönder
+                        fetch('/api/homework/cleanup', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({})  // Boş bir JSON nesnesi gönder
+                        })
+                        .then(response => {
+                            // Önce response'un başarılı olup olmadığını kontrol edelim
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! Status: ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data && data.success) {
+                                console.log('Süresi geçmiş ödevler temizlendi:', data.message);
+                                // Ödevleri yeniden yükle
+                                fetchHomeworks();
+                            } else {
+                                console.error('Süresi geçmiş ödevleri temizlerken hata:', data?.message || 'Bilinmeyen hata');
+                                // Hata oluştuğunda bile ödevleri göstermeye devam et
+                                displayHomeworks();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Süresi geçmiş ödevleri temizlerken hata:', error);
+                            // Hata oluştuğunda ödevleri göster
+                            displayHomeworks();
+                        });
+                    } catch (e) {
+                        console.error('Temizleme isteği gönderilirken beklenmeyen hata:', e);
+                        // Herhangi bir hata durumunda ödevleri göstermeye devam et
+                        displayHomeworks();
+                    }
                 }
             })
             .catch(error => {
@@ -890,8 +901,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const daysDiff = Math.ceil(Math.abs(timeDiff) / (1000 * 3600 * 24));
                     daysText = `${daysDiff} gün gecikti`;
                 } else if (isDueToday) {
-                    // Bugün teslim edilecekse sadece "Bugün" olarak göster
-                    daysText = 'Bugün';
+                    // Bugün teslim edilecekse "Bugün teslim" olarak göster
+                    daysText = 'Bugün teslim';
                 } else {
                     const timeDiff = dueDate.getTime() - turkishNow.getTime();
                     // Math.ceil yerine Math.floor kullanarak tam günü hesaplayalım

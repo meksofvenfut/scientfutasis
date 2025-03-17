@@ -3021,29 +3021,31 @@ function cleanupOverdueHomework() {
         // Türkiye saati için düzeltilmiş tarih
         const turkishNow = new Date(now.getTime() + localOffset + turkishOffset);
         
-        // Bugünün başlangıcını hesapla (saat 00:00:00)
-        const todayStart = new Date(turkishNow);
-        todayStart.setHours(0, 0, 0, 0);
+        // Bugünün tarihini YYYY-MM-DD formatında alalım
+        const today = turkishNow.toISOString().split('T')[0];
         
-        // SQLite için tarih formatına çevir
-        const formattedDate = todayStart.toISOString().split('T')[0]; // "YYYY-MM-DD" formatı
-        
-        console.log(`Temizleme için kullanılan tarih: ${formattedDate} - Şu anki TR zamanı: ${turkishNow.toISOString()}`);
+        console.log(`Otomatik Temizleme - Bugünün tarihi: ${today} - Şu anki TR zamanı: ${turkishNow.toISOString()}`);
         
         // Önce temizlenecek ödevleri görmek için sorgu yap
         let checkQuery, checkParams;
         
         if (dbType === 'postgresql') {
+            // PostgreSQL için sadece bugünden önceki tarihleri sorgula (bugün hariç)
             checkQuery = `SELECT id, title, "dueDate" FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
-            checkParams = [formattedDate];
+            checkParams = [today];
         } else {
             checkQuery = `SELECT id, title, dueDate FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-            checkParams = [formattedDate];
+            checkParams = [today];
         }
+        
+        console.log('Otomatik Temizleme SQL Sorgusu:', checkQuery);
+        console.log('Otomatik Temizleme SQL Parametreler:', checkParams);
         
         db.all(checkQuery, checkParams, (err, rows) => {
             if (err) {
                 console.error('Silinecek ödevleri kontrol ederken hata:', err.message);
+                console.error('Otomatik Temizleme SQL Sorgusu:', checkQuery);
+                console.error('Otomatik Temizleme SQL Parametreler:', checkParams);
                 return;
             }
             
@@ -3055,19 +3057,24 @@ function cleanupOverdueHomework() {
                 
                 if (dbType === 'postgresql') {
                     query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
-                    params = [formattedDate];
+                    params = [today];
                 } else {
                     query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-                    params = [formattedDate];
+                    params = [today];
                 }
+                
+                console.log('Otomatik Temizleme SQL Silme Sorgusu:', query);
+                console.log('Otomatik Temizleme SQL Silme Parametreleri:', params);
                 
                 db.run(query, params, function(err) {
                     if (err) {
                         console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
+                        console.error('Otomatik Temizleme SQL Silme Sorgusu:', query);
+                        console.error('Otomatik Temizleme SQL Silme Parametreleri:', params);
                         return;
                     }
                     
-                    console.log(`Temizleme tamamlandı. ${this.changes} adet süresi 1 günden fazla geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+                    console.log(`Temizleme tamamlandı. ${this.changes} adet süresi geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
                 });
             } else {
                 console.log('Silinecek süresi geçmiş ödev bulunamadı');
@@ -3120,32 +3127,35 @@ app.post('/api/homework/cleanup', (req, res) => {
         // Türkiye saati için düzeltilmiş tarih
         const turkishNow = new Date(now.getTime() + localOffset + turkishOffset);
         
-        // Bugünün başlangıcını hesapla (saat 00:00:00)
-        const todayStart = new Date(turkishNow);
-        todayStart.setHours(0, 0, 0, 0);
+        // Bugünün tarihini YYYY-MM-DD formatında alalım
+        const today = turkishNow.toISOString().split('T')[0];
         
-        // SQLite için tarih formatına çevir
-        const formattedDate = todayStart.toISOString().split('T')[0]; // "YYYY-MM-DD" formatı
-        
-        console.log(`API - Temizleme için kullanılan tarih: ${formattedDate} - Şu anki TR zamanı: ${turkishNow.toISOString()}`);
+        console.log(`API - Bugünün tarihi: ${today} - Şu anki TR zamanı: ${turkishNow.toISOString()}`);
         
         // Önce temizlenecek ödevleri görmek için sorgu yap
         let checkQuery, checkParams;
         
         if (dbType === 'postgresql') {
+            // PostgreSQL için sadece bugünden önceki tarihleri sorgula (bugün hariç)
             checkQuery = `SELECT id, title, "dueDate" FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
-            checkParams = [formattedDate];
+            checkParams = [today];
         } else {
             checkQuery = `SELECT id, title, dueDate FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-            checkParams = [formattedDate];
+            checkParams = [today];
         }
+        
+        console.log('SQL Sorgusu:', checkQuery);
+        console.log('SQL Parametreler:', checkParams);
         
         db.all(checkQuery, checkParams, (err, rows) => {
             if (err) {
                 console.error('API - Silinecek ödevleri kontrol ederken hata:', err.message);
+                console.error('SQL Sorgusu:', checkQuery);
+                console.error('SQL Parametreler:', checkParams);
                 return res.status(500).json({ 
                     success: false, 
-                    message: 'Ödevler kontrol edilirken bir hata oluştu'
+                    message: 'Ödevler kontrol edilirken bir hata oluştu',
+                    error: err.message
                 });
             }
             
@@ -3156,19 +3166,26 @@ app.post('/api/homework/cleanup', (req, res) => {
                 let query, params;
                 
                 if (dbType === 'postgresql') {
+                    // PostgreSQL için AND operatöründen önce ve sonra boşluklar olmalı
                     query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
-                    params = [formattedDate];
+                    params = [today];
                 } else {
                     query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-                    params = [formattedDate];
+                    params = [today];
                 }
+                
+                console.log('SQL Silme Sorgusu:', query);
+                console.log('SQL Silme Parametreleri:', params);
                 
                 db.run(query, params, function(err) {
                     if (err) {
                         console.error('API - Süresi geçmiş ödevleri temizlerken hata:', err.message);
+                        console.error('SQL Silme Sorgusu:', query);
+                        console.error('SQL Silme Parametreleri:', params);
                         return res.status(500).json({ 
                             success: false, 
-                            message: 'Ödevler temizlenirken bir hata oluştu'
+                            message: 'Ödevler temizlenirken bir hata oluştu',
+                            error: err.message
                         });
                     }
                     
@@ -3191,7 +3208,8 @@ app.post('/api/homework/cleanup', (req, res) => {
         console.error('API - Süresi geçmiş ödevleri temizlerken beklenmeyen hata:', error);
         return res.status(500).json({ 
             success: false, 
-            message: 'İşlem sırasında bir hata oluştu'
+            message: 'İşlem sırasında bir hata oluştu',
+            error: error.message
         });
     }
 }); 
