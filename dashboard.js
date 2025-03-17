@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Service worker'ı unregister etmek için
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(registrations) {
-            for(let registration of registrations) {
+            for (let registration of registrations) {
                 registration.unregister().then(function(success) {
                     console.log('Service worker unregister edildi:', success);
                     // Cache'i temizle
@@ -26,6 +26,47 @@ document.addEventListener('DOMContentLoaded', () => {
     // Oturum kontrolü
     let userInfo;
     const token = localStorage.getItem('token');
+    
+    // İsteği handle eden wrapper fonksiyon
+    // Tüm fetch isteklerimizi bu fonksiyon üzerinden yapacağız
+    async function fetchWithTokenCheck(url, options = {}) {
+        // Kullanıcı token'ını header'lara ekle
+        const token = userInfo?.token || localStorage.getItem('token') || '';
+        if (token) {
+            if (!options.headers) {
+                options.headers = {};
+            }
+            options.headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        try {
+            const response = await fetch(url, options);
+            
+            // API yanıtını kontrol et, token geçersiz kılındıysa
+            if (response.status === 401) { // Unauthorized
+                const data = await response.json();
+                
+                // Şifre değişikliği nedeniyle token geçersiz kılındıysa
+                if (data.code === 'TOKEN_REVOKED' || data.code === 'TOKEN_EXPIRED') {
+                    // Kullanıcıya uyarı göster
+                    showNotification(data.message || 'Oturumunuz sonlandırıldı, lütfen tekrar giriş yapın.', 'error');
+                    
+                    // 3 saniye sonra çıkış yap
+                    setTimeout(() => {
+                        logout();
+                    }, 3000);
+                    
+                    // İsteği iptal et
+                    throw new Error(data.message || 'Oturum sonlandırıldı');
+                }
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('Fetch hatası:', error);
+            throw error;
+        }
+    }
     
     // Token yoksa login sayfasına yönlendir
     if (!token) {
@@ -1414,7 +1455,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        fetch('/api/announcements/get')
+        fetchWithTokenCheck('/api/announcements/get')
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Sunucu hatası: ' + response.status);
@@ -2592,7 +2633,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Kullanıcıları sunucudan çekme
     function fetchUsers() {
-        fetch('/api/users')
+        fetchWithTokenCheck('/api/users')
             .then(response => response.json())
             .then(data => {
                 // Sunucu artık direkt kullanıcı dizisi dönüyor, eskiden success/users yapısı vardı

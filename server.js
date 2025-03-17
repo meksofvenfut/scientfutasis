@@ -19,6 +19,11 @@ console.log('Zaman dilimi ayarlandı:', process.env.TZ);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Kullanıcı oturumlarının yönetimi için geçersiz kılınmış token listesi
+// Bu liste, şifresi değiştirilen kullanıcıların ID'lerini ve şifre değişim zamanını içerir
+// Bu sayede, kullanıcının şifresi değiştirildiğinde eski oturumları geçersiz kılınabilir
+const revokedUserTokens = new Map();
+
 // Veritabanı bağlantısı için değişkenler
 let db;
 let pool; // Global pool değişkeni tanımlıyorum
@@ -171,6 +176,62 @@ app.use('/api', (req, res, next) => {
     res.setHeader('Surrogate-Control', 'no-store');
     res.setHeader('Vary', 'Accept, Accept-Encoding, Origin');
     next();
+});
+
+// JWT token doğrulama middleware'i
+// Bu middleware, istek headerlarında token varsa bunu çözümler ve geçerliliğini kontrol eder
+app.use('/api', (req, res, next) => {
+    // Login ve register endpointleri için token kontrolü yapma
+    if (req.path === '/api/login' || req.path === '/api/register' || req.path === '/api/init' || req.path === '/api/init-data') {
+        return next();
+    }
+    
+    // Authorization header'ından token'ı al
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return next(); // Token yoksa bir sonraki middleware'e geç
+    }
+    
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return next();
+    }
+    
+    try {
+        // Token'ı doğrula
+        const decoded = jwt.verify(token, JWT_SECRET);
+        
+        // Token'ın şifre değişikliği sonrası geçersiz kılınıp kılınmadığını kontrol et
+        const userId = decoded.id.toString();
+        const tokenIssuedAt = new Date(decoded.iat * 1000).getTime(); // Token oluşturulma zamanı (saniyeden milisaniyeye çevir)
+        
+        // Kullanıcının token'ı geçersiz kılma zamanını al
+        const revocationTime = revokedUserTokens.get(userId);
+        
+        // Eğer token geçersiz kılma zamanından önce oluşturulmuşsa, geçersiz say
+        if (revocationTime && tokenIssuedAt < revocationTime) {
+            console.log(`Kullanıcı ID: ${userId} için geçersiz token tespit edildi. Token tarihi: ${new Date(tokenIssuedAt).toISOString()}, Geçersiz kılma tarihi: ${new Date(revocationTime).toISOString()}`);
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Oturumunuz sonlandırıldı, lütfen tekrar giriş yapın',
+                code: 'TOKEN_REVOKED'
+            });
+        }
+        
+        // Token geçerliyse, kullanıcı bilgilerini request nesnesine ekle
+        req.user = decoded;
+        next();
+    } catch (error) {
+        console.error('Token doğrulama hatası:', error.message);
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ 
+                success: false, 
+                message: 'Oturumunuz sona erdi, lütfen tekrar giriş yapın',
+                code: 'TOKEN_EXPIRED'
+            });
+        }
+        next();
+    }
 });
 
 // URL düzeltmesi için middleware - /users gibi çağrıları /api/users'a yönlendir
@@ -2896,12 +2957,14 @@ app.put('/api/users/:id', (req, res) => {
             // Kullanıcıyı güncelleme işlemi
             function updateUser() {
                 let query, params;
+                let passwordChanged = false;
                 
                 // Eğer şifre de değiştirilmek isteniyorsa
             if (password && password.trim() !== '') {
                     // Şifreyi kodla (encode) - login ve register ile aynı yöntemi kullan
                     const encodedPassword = Buffer.from(password).toString('base64');
                     console.log(`Şifre güncelleme kodlandı: Orijinal uzunluk = ${password.length}, Kodlanmış uzunluk = ${encodedPassword.length}`);
+                    passwordChanged = true;
                     
                     if (isPg) {
                         query = `
@@ -2948,6 +3011,14 @@ app.put('/api/users/:id', (req, res) => {
                     }
                     
                     console.log(`Kullanıcı güncellendi - ID: ${userId}, Kullanıcı adı: ${username}`);
+                    
+                    // Eğer şifre değiştirildiyse, kullanıcının önceki oturumlarını geçersiz kıl
+                    if (passwordChanged) {
+                        // Geçersiz kılma zamanını kaydet
+                        const revocationTime = new Date().getTime();
+                        revokedUserTokens.set(userId.toString(), revocationTime);
+                        console.log(`Kullanıcı ID: ${userId} için tüm önceki oturumlar geçersiz kılındı. Zaman: ${new Date(revocationTime).toISOString()}`);
+                    }
                     return res.json({ 
                     success: true, 
                         message: 'Kullanıcı başarıyla güncellendi',
