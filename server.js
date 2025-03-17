@@ -3048,6 +3048,11 @@ function cleanupOverdueHomework() {
         if (isPg || dbType === 'postgresql') {
             console.log('PostgreSQL için otomatik temizleme işlemi başlatılıyor...');
             
+            if (!pool) {
+                console.error('HATA: PostgreSQL havuzu (pool) tanımlı değil!');
+                return;
+            }
+            
             // PostgreSQL sorgusu - Double quote kullanılarak sütun adları belirtilir
             const checkQuery = `SELECT id, title, "dueDate" FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
             const checkParams = [today];
@@ -3172,6 +3177,15 @@ app.post('/api/homework/cleanup', (req, res) => {
         // PostgreSQL için işlemler
         if (isPg || dbType === 'postgresql') {
             console.log('PostgreSQL için temizleme işlemi başlatılıyor...');
+            
+            if (!pool) {
+                console.error('HATA: PostgreSQL havuzu (pool) tanımlı değil!');
+                return res.status(500).json({
+                    success: false,
+                    message: 'Veritabanı bağlantı havuzu oluşturulmamış',
+                    error: 'PostgreSQL bağlantı hatası'
+                });
+            }
             
             // PostgreSQL sorgusu - Double quote kullanılarak sütun adları belirtilir
             const checkQuery = `SELECT id, title, "dueDate" FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
