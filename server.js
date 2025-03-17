@@ -1986,25 +1986,21 @@ function addAnnouncementExamples() {
             const insertQuery = isPg ?
                 `INSERT INTO announcements (title, content, importance, "eventDate", "createdAt", "updatedAt")
                 VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id
-            `;
-            params = [announcement.title, announcement.content, announcement.importance, announcement.eventDate || null, now, now];
+                RETURNING id` :
+                `INSERT OR IGNORE INTO announcements (title, content, importance, eventDate, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
+                
+            const params = isPg ?
+                [announcement.title, announcement.content, announcement.importance, announcement.eventDate || null, now, now] :
+                [announcement.title, announcement.content, announcement.importance, announcement.eventDate || null];
+                
             db.run(insertQuery, params, function(err) {
                 if (err) {
                     console.error('Duyuru eklenirken hata:', err.message);
-                    return res.status(500).json({ 
-                        success: false, 
-                        message: 'Veritabanı hatası', 
-                        error: err.message 
-                    });
+                    return; // Örnek verileri eklerken hata döndürmek gerekmez
                 }
                 
-                console.log(`Yeni duyuru eklendi: ${announcement.title} - ID: ${this.lastID}`);
-                res.json({ 
-                    success: true, 
-                    message: 'Duyuru başarıyla eklendi',
-                    id: this.lastID 
-                });
+                console.log(`Yeni duyuru eklendi: ${announcement.title} - ID: ${this.lastID || 0}`);
             });
         });
     });
