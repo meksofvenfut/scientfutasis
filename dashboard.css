@@ -2381,32 +2381,29 @@ html[data-theme="dark"] .schedule-table tr:hover td {
     display: flex;
     align-items: center;
     background-color: rgba(var(--accent-color-rgb), 0.08);
-    border-radius: 12px;
-    padding: 8px 12px;
+    border-radius: 8px;
+    padding: 6px 10px;
     margin-top: 15px;
     transition: all 0.3s ease;
     border-left: 4px solid var(--accent-color);
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .announcement-card .event-date:hover {
     background-color: rgba(var(--accent-color-rgb), 0.12);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
 }
 
 .announcement-card .event-date svg {
-    width: 20px;
-    height: 20px;
-    margin-right: 8px;
+    width: 18px;
+    height: 18px;
+    margin-right: 6px;
     color: var(--accent-color);
     flex-shrink: 0;
 }
 
 .announcement-card .event-date strong {
-    margin-right: 4px;
-    color: var(--accent-color);
-    font-weight: 600;
-    font-size: 0.9em;
+    display: none;
 }
 
 .announcement-card .event-date-content {
@@ -2416,22 +2413,15 @@ html[data-theme="dark"] .schedule-table tr:hover td {
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    font-size: 0.9em;
 }
 
 @media (max-width: 768px) {
     .announcement-card .event-date {
-        padding: 8px 10px;
-        align-items: center;
-        flex-direction: row;
+        padding: 6px 8px;
     }
     
     .announcement-card .event-date svg {
-        margin-bottom: 0;
-        margin-right: 8px;
-    }
-    
-    .announcement-card .event-date-content {
-        margin-top: 0;
-        white-space: normal;
+        margin-right: 6px;
     }
 } 
