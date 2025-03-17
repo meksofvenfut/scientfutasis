@@ -712,12 +712,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Ödevleri sunucudan çek
     function fetchHomeworks() {
-        // Yükleniyor göstergesini görünür yap, element varlığını kontrol ederek
-        const loadingIndicator = document.querySelector('.loading-indicator');
-        if (loadingIndicator) {
-            loadingIndicator.style.display = 'flex';
-        }
+        console.log('Ödevler yükleniyor...');
         
+        // Yükleme göstergesini göster
         const noHomeworkMessage = document.getElementById('noHomeworkMessage');
         if (noHomeworkMessage) {
             noHomeworkMessage.style.display = 'none';
@@ -728,16 +725,53 @@ document.addEventListener('DOMContentLoaded', () => {
             homeworkCards.innerHTML = '<div class="loading-indicator"><div class="spinner"></div><p>Ödevler yükleniyor...</p></div>';
         } else {
             console.error('homeworkCards elementi bulunamadı!');
-            // Element bulunamadıysa, bir hata mesajı göster
             showNotification('Ödev listesi yüklenemiyor, sayfayı yenileyin!', 'error');
-            return;
         }
         
+        // Ödevleri sunucudan çek
         fetch('/api/homework/get')
             .then(response => response.json())
             .then(data => {
                 homeworkData = data;
+                
+                // Ödevleri yüklendikten sonra göster
                 displayHomeworks();
+                
+                // Süresi 1 günden fazla geçmiş ödevleri filtreleme - sadece gösterim için
+                // Sunucu tarafında zaten silme işlemi yapılıyor
+                const now = new Date();
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                // 1 günden fazla gecikmiş ödevleri tespit et
+                const overdueTasks = homeworkData.filter(homework => {
+                    const dueDate = new Date(homework.dueDate);
+                    return dueDate < yesterday && !homework.isCompleted;
+                });
+                
+                // Eğer 1 günden fazla gecikmiş ödev varsa, bildir
+                if (overdueTasks.length > 0) {
+                    console.log(`${overdueTasks.length} adet süresi 1 günden fazla geçmiş ödev bulundu. Bu ödevler sunucu tarafından otomatik olarak silinecektir.`);
+                    
+                    // Sunucuya süresi geçmiş ödevleri silme isteği gönder
+                    fetch('/api/homework/cleanup', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log('Süresi geçmiş ödevler temizlendi:', data.message);
+                            // Ödevleri yeniden yükle
+                            fetchHomeworks();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Süresi geçmiş ödevleri temizlerken hata:', error);
+                    });
+                }
             })
             .catch(error => {
                 console.error('Ödev yükleme hatası:', error);
@@ -789,10 +823,27 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Her ödev için bir kart oluştur
         homeworkData.forEach(homework => {
-            // Teslim tarihi geçmiş mi kontrol et
-            const dueDate = new Date(homework.dueDate);
-            const today = new Date();
-            const isOverdue = dueDate < today && !homework.isCompleted;
+            // Türkiye saatini kullan
+            const dueDate = new Date(homework.dueDate + 'T23:59:59');
+            
+            // Şu anki Türkiye saatini al
+            const now = new Date();
+            const turkishNow = new Date(now.toLocaleString('tr-TR', {timeZone: 'Europe/Istanbul'}));
+            
+            // Teslim tarihi ve bugünün tarihini karşılaştırmak için tarih kısımlarını ayıkla
+            const dueDateDay = dueDate.getDate();
+            const dueDateMonth = dueDate.getMonth();
+            const dueDateYear = dueDate.getFullYear();
+            
+            const todayDay = turkishNow.getDate();
+            const todayMonth = turkishNow.getMonth();
+            const todayYear = turkishNow.getFullYear();
+            
+            // Bugün teslim edilecek mi kontrol et
+            const isDueToday = dueDateDay === todayDay && dueDateMonth === todayMonth && dueDateYear === todayYear;
+            
+            // Teslim tarihi geçmiş mi kontrol et - aynı gün değilse ve tarih geçmişse
+            const isOverdue = dueDate < turkishNow && !isDueToday && !homework.isCompleted;
             
             // Duruma göre durumu belirle
             let statusClass = '';
@@ -804,6 +855,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (isOverdue) {
                 statusClass = 'overdue';
                 statusText = 'Gecikmiş';
+            } else if (isDueToday) {
+                statusClass = 'due-today';
+                statusText = 'Bugün Teslim';
             }
             
             // Teslim tarihini formatlı göster
@@ -814,7 +868,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             // Kalan gün sayısını hesapla
-            const timeDiff = dueDate.getTime() - today.getTime();
+            const timeDiff = dueDate.getTime() - turkishNow.getTime();
             const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
             let daysText = '';
             
@@ -822,6 +876,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 daysText = 'Tamamlandı';
             } else if (isOverdue) {
                 daysText = `${Math.abs(daysDiff)} gün gecikti`;
+            } else if (isDueToday) {
+                daysText = 'Bugün teslim';
             } else {
                 daysText = `${daysDiff} gün kaldı`;
             }

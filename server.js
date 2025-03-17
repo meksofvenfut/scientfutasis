@@ -3007,6 +3007,53 @@ app.delete('/api/users/:id', (req, res) => {
     }
 });
 
+// Teslim tarihi geçmiş ödevleri otomatik olarak silen fonksiyon
+function cleanupOverdueHomework() {
+    console.log(`Süresi geçmiş ödevleri temizleme işlemi başlatıldı. Zaman: ${getTurkishTimeString()}`);
+    
+    // Türkiye saati ile şu anki tarihi al
+    const now = new Date();
+    // Bir gün öncesini hesapla (24 saat öncesi)
+    const oneDayAgo = new Date(now);
+    oneDayAgo.setDate(now.getDate() - 1);
+    
+    // SQLite için tarih formatına çevir
+    const formattedDate = oneDayAgo.toISOString().split('T')[0]; // "YYYY-MM-DD" formatı
+    
+    let query, params;
+    
+    if (dbType === 'postgresql') {
+        query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
+        params = [formattedDate];
+    } else {
+        query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+        params = [formattedDate];
+    }
+    
+    db.run(query, params, function(err) {
+        if (err) {
+            console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
+            return;
+        }
+        
+        console.log(`Temizleme tamamlandı. ${this.changes} adet süresi 1 günden fazla geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+    });
+}
+
+// Server başlangıcında ve her gün bir kere çalıştır
+cleanupOverdueHomework();
+// Her gün gece yarısından sonra çalıştır (00:01'de)
+setInterval(() => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    
+    // Gece 00:01'de temizleme işlemini yap
+    if (hours === 0 && minutes === 1) {
+        cleanupOverdueHomework();
+    }
+}, 60000); // Her dakika kontrol et
+
 // Sunucuyu başlat
 const server = app.listen(PORT, () => {
     console.log(`Server ${PORT} portunda başlatıldı: http://localhost:${PORT}`);
@@ -3018,5 +3065,49 @@ process.on('SIGTERM', () => {
     server.close(() => {
         console.log('Sunucu kapatıldı.');
         process.exit(0);
+    });
+});
+
+// 5. Süresi geçmiş ödevleri temizle
+app.post('/api/homework/cleanup', (req, res) => {
+    console.log('Süresi geçmiş ödevleri temizleme isteği alındı');
+    
+    // Kullanıcı tipi kontrolü - sadece admin veya normal kullanıcılar
+    const userType = req.session.userType;
+    
+    // Türkiye saati ile şu anki tarihi al
+    const now = new Date();
+    // Bir gün öncesini hesapla (24 saat öncesi)
+    const oneDayAgo = new Date(now);
+    oneDayAgo.setDate(now.getDate() - 1);
+    
+    // SQLite için tarih formatına çevir
+    const formattedDate = oneDayAgo.toISOString().split('T')[0]; // "YYYY-MM-DD" formatı
+    
+    let query, params;
+    
+    if (dbType === 'postgresql') {
+        query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
+        params = [formattedDate];
+    } else {
+        query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+        params = [formattedDate];
+    }
+    
+    db.run(query, params, function(err) {
+        if (err) {
+            console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
+            return res.status(500).json({ 
+                success: false, 
+                message: 'Ödevler temizlenirken bir hata oluştu'
+            });
+        }
+        
+        console.log(`Temizleme tamamlandı. ${this.changes} adet süresi 1 günden fazla geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+        
+        return res.json({ 
+            success: true, 
+            message: `${this.changes} adet süresi geçmiş ödev silindi`
+        });
     });
 }); 
