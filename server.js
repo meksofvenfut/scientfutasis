@@ -406,6 +406,7 @@ db.serialize(() => {
                 file_path TEXT,
                 file_name TEXT,
                 file_size INTEGER,
+                file_content BYTEA,
                 examDate TEXT NOT NULL,
                 createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -1673,10 +1674,10 @@ app.get('/api/init', (req, res) => {
                         file_path TEXT,
                         file_name TEXT,
                         file_size INTEGER,
-                        "examDate" TEXT NOT NULL,
-                        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE (title, lesson)
+                        file_content BYTEA,
+                        examDate TEXT NOT NULL,
+                        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 `, [], err => {
                     if (err) console.error('Grades tablosu oluşturulamadı:', err.message);
@@ -2499,11 +2500,23 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         
         const now = new Date().toISOString();
     
-    // Dosya bilgileri
+        // Dosya bilgileri
         let filePath = file ? file.path : null;
         // Dosya adını düzgün şekilde kaydet - filename zaten filename handler'da dönüştürüldü
         const fileName = file ? file.filename : null;
         const fileSize = file ? file.size : null;
+        
+        // Dosya içeriğini binary olarak oku (PostgreSQL için)
+        let fileContent = null;
+        if (file && isPg) {
+            try {
+                fileContent = fs.readFileSync(file.path);
+                console.log('Dosya içeriği binary olarak okundu, boyut:', fileContent.length);
+            } catch (readError) {
+                console.error('Dosya içeriği okunurken hata:', readError);
+                // Hataya rağmen devam edelim, binary içeriksiz kayıt yapılsın
+            }
+        }
         
         // Render.com üzerinde çalışıyorsa, mutlak dosya yollarını kullan
         if (file && isRunningOnRender) {
@@ -2521,6 +2534,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
                 name: fileName,
                 originalName: file.originalname,
                 size: fileSize,
+                hasBinaryContent: fileContent ? 'Evet' : 'Hayır',
                 isOnRender: isRunningOnRender
             });
         }
@@ -2529,11 +2543,11 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         
         if (isPg) {
             query = `
-                INSERT INTO grades (title, lesson, type, "examDate", file_path, file_name, file_size, "createdAt", "updatedAt")
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                INSERT INTO grades (title, lesson, type, "examDate", file_path, file_name, file_size, file_content, "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING id
             `;
-            params = [title, lesson, type, examDate, filePath, fileName, fileSize, now, now];
+            params = [title, lesson, type, examDate, filePath, fileName, fileSize, fileContent, now, now];
         } else {
             query = `
                 INSERT INTO grades (title, lesson, type, examDate, file_path, file_name, file_size, createdAt, updatedAt)
@@ -2548,35 +2562,41 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
                 return res.status(500).json({ 
                     success: false, 
                     message: 'Sınav notu eklenirken bir hata oluştu', 
-                    error: err.message 
+                    error: err.message
                 });
             }
             
-            console.log(`Yeni sınav notu eklendi: ${title} - ID: ${this.lastID || 'unknown'}`);
-        res.json({ 
-            success: true, 
-                message: 'Sınav notu başarıyla eklendi', 
-                id: this.lastID,
-                title: title,
-                lesson: lesson,
-                type: type,
-                examDate: examDate
+            const gradeId = this.lastID || (isPg && this.rows && this.rows[0] ? this.rows[0].id : null);
+            
+            if (!gradeId) {
+                console.error('Sınav notu ID\'si alınamadı');
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Sınav notu ID\'si alınamadı'
+                });
+            }
+            
+            console.log('Yeni sınav notu eklendi - ID:', gradeId);
+            return res.json({
+                success: true, 
+                message: 'Sınav notu başarıyla eklendi',
+                id: gradeId
+            });
         });
-    });
     } catch (error) {
         console.error('Sınav notu ekleme hatası:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Sınav notu eklenirken bir hata oluştu', 
-            error: error.message 
+        return res.status(500).json({
+            success: false,
+            message: 'Sınav notu eklenirken bir hata oluştu',
+            error: error.message
         });
     }
 });
 
 // 3. Sınav notu güncelleme
-app.put('/api/grades/update/:id', upload.single('file'), (req, res) => {
+app.post('/api/grades/update/:id', upload.single('file'), (req, res) => {
     try {
-    const gradeId = req.params.id;
+        const gradeId = req.params.id;
         console.log('Sınav notu güncelleme isteği alındı:', gradeId);
         
         // Kullanıcı tipi kontrolü - sadece admin kullanıcılar güncelleyebilir
@@ -2589,41 +2609,66 @@ app.put('/api/grades/update/:id', upload.single('file'), (req, res) => {
             });
         }
         
-        // FormData ile gönderilen veriler
+        // Parametreleri al
         const title = req.body.title;
         const lesson = req.body.lesson;
         const type = req.body.type;
         const examDate = req.body.examDate;
-        const keepExistingFile = req.body.keepExistingFile === 'true';
+        const keepExistingFile = req.body.keepExistingFile === 'true'; // string "true" -> boolean true
         
-        console.log('Güncelleme parametreleri:', { title, lesson, type, examDate, keepExistingFile });
-        
-        // Gerekli alanların kontrolü
-        if (!gradeId || !title || !lesson || !type || !examDate) {
+        // Girilen verileri kontrol et
+        if (!title || !lesson || !type || !examDate) {
             console.error('Eksik bilgi ile sınav notu güncelleme girişimi');
             return res.status(400).json({ 
                 success: false, 
-                message: 'Tüm alanları doldurunuz' 
+                message: 'Başlık, ders, tür ve tarih gereklidir' 
             });
         }
         
-        // Dosya bilgisi
         const file = req.file;
+        
+        // Dosya bilgileri - eğer yeni dosya yüklendiyse veya mevcut dosya kaldırıldıysa
         let filePath = null;
         let fileName = null;
         let fileSize = null;
+        let fileContent = null;
         
         if (file) {
             filePath = file.path;
-            // Dosya adı için filename kullan (kodlama düzeltilmiş hali)
             fileName = file.filename;
             fileSize = file.size;
-            console.log('Yeni dosya yüklendi:', {
+            
+            // Dosya içeriğini binary olarak oku (PostgreSQL için)
+            if (isPg) {
+                try {
+                    fileContent = fs.readFileSync(file.path);
+                    console.log('Dosya içeriği binary olarak okundu, güncelleme için, boyut:', fileContent.length);
+                } catch (readError) {
+                    console.error('Dosya içeriği okunurken hata:', readError);
+                    // Hataya rağmen devam edelim, binary içeriksiz kayıt yapılsın
+                }
+            }
+            
+            // Render.com üzerinde çalışıyorsa, mutlak dosya yollarını kullan
+            if (isRunningOnRender) {
+                // Render'da file.path içinde tam yol olmayabilir, bu durumda oluşturalım
+                if (!filePath.startsWith('/')) {
+                    filePath = path.join(uploadDir, fileName);
+                }
+                console.log('Render.com üzerinde dosya yolu düzeltildi:', filePath);
+            }
+            
+            console.log('Yeni dosya bilgileri:', {
                 path: filePath,
-                name: fileName,
-                originalName: file.originalname,
-                size: fileSize
+                name: fileName, 
+                size: fileSize,
+                hasBinaryContent: fileContent ? 'Evet' : 'Hayır'
             });
+        } else if (!keepExistingFile) {
+            // Eğer dosya yüklenmemiş ve mevcut dosyayı tutmak istenmiyorsa, dosya bilgilerini null yap
+            console.log('Mevcut dosya kaldırıldı');
+        } else {
+            console.log('Dosya değişmedi, mevcut dosya korunuyor');
         }
         
         const now = new Date().toISOString();
@@ -2635,11 +2680,11 @@ app.put('/api/grades/update/:id', upload.single('file'), (req, res) => {
             query = `
                 UPDATE grades 
                     SET title = $1, lesson = $2, type = $3, "examDate" = $4, "updatedAt" = $5, 
-                        file_path = $6, file_name = $7, file_size = $8
-                    WHERE id = $9
+                        file_path = $6, file_name = $7, file_size = $8, file_content = $9
+                    WHERE id = $10
                     RETURNING id
                 `;
-                params = [title, lesson, type, examDate, now, filePath, fileName, fileSize, gradeId];
+                params = [title, lesson, type, examDate, now, filePath, fileName, fileSize, fileContent, gradeId];
             } else {
                 query = `
                     UPDATE grades 
@@ -2789,7 +2834,7 @@ app.get('/api/grades/download/:id', (req, res) => {
         let query, params;
         
         if (isPg) {
-            query = `SELECT file_path, file_name FROM grades WHERE id = $1`;
+            query = `SELECT file_path, file_name, file_content FROM grades WHERE id = $1`;
             params = [gradeId];
         } else {
             query = `SELECT file_path, file_name FROM grades WHERE id = ?`;
@@ -2806,7 +2851,7 @@ app.get('/api/grades/download/:id', (req, res) => {
                 });
             }
             
-            if (!row || !row.file_path) {
+            if (!row) {
                 console.log(`${gradeId} ID'li sınav notuna ait dosya bilgisi bulunamadı`);
                 return res.status(404).json({ 
                     success: false, 
@@ -2815,14 +2860,31 @@ app.get('/api/grades/download/:id', (req, res) => {
             }
             
             // Dosya bilgilerini logla
-            console.log('Veritabanından alınan dosya bilgileri:', row);
+            console.log('Veritabanından alınan dosya bilgileri:', {
+                filePath: row.file_path,
+                fileName: row.file_name,
+                hasBinaryContent: row.file_content ? 'Evet' : 'Hayır'
+            });
             
-            // Eğer dosya varsa indirme işlemi başlat
-            const filePath = row.file_path;
             // Dosya adı veritabanından doğrudan gelir, zaten düzgün şekilde kaydedilmiş olmalı
-            let fileName = row.file_name || 'dosya';
+            let fileName = row.file_name || 'dosya.pdf';
             
-            console.log(`Dosya indiriliyor: ${filePath} - ${fileName}`);
+            // PostgreSQL ve binary içerik varsa, doğrudan gönderelim
+            if (isPg && row.file_content) {
+                console.log('Veritabanından binary içerik kullanılıyor, boyut:', row.file_content.length);
+                
+                // Dosyayı gönder
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+                res.setHeader('Content-Type', 'application/octet-stream');
+                
+                // Binary içeriği doğrudan gönder
+                return res.end(row.file_content);
+            }
+            
+            // Eğer buraya geldiyse, binary içerik yok demektir, dosya sisteminden okuyalım
+            const filePath = row.file_path;
+            
+            console.log(`Dosya indiriliyor (dosya sisteminden): ${filePath} - ${fileName}`);
             
             // Olası dosya yollarını kontrol et - daha fazla olasılık ekleyelim
             const __dirnameFull = path.resolve(__dirname);
@@ -2949,7 +3011,7 @@ app.get('/api/grades/download/:id', (req, res) => {
         console.error('Dosya indirme hatası:', error);
         res.status(500).json({ 
             success: false, 
-            message: 'Sunucu hatası', 
+            message: 'Dosya indirme hatası', 
             error: error.message 
         });
     }
