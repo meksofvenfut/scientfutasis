@@ -21,6 +21,8 @@ const PORT = process.env.PORT || 3000;
 
 // Veritabanı bağlantısı için değişkenler
 let db;
+let pool; // Global pool değişkeni tanımlıyorum
+
 // SQLite veya PostgreSQL kullanılacağını belirle
 const isPg = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgres');
 const dbType = isPg ? 'postgresql' : 'sqlite';
@@ -35,7 +37,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'scientfutasis-secret-key';
 // DB bağlantısı kurma
 if (isPg) {
     // PostgreSQL bağlantısı (Render.com'da otomatik sağlanan değişkenler)
-    const pool = new Pool({
+    pool = new Pool({
         connectionString: process.env.DATABASE_URL,
         ssl: {
             rejectUnauthorized: false
