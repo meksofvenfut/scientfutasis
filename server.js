@@ -19,14 +19,17 @@ console.log('Zaman dilimi ayarlandı:', process.env.TZ);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Veritabanı bağlantısı
+// Veritabanı bağlantısı için değişkenler
 let db;
 // SQLite veya PostgreSQL kullanılacağını belirle
-const dbType = process.env.DB_TYPE || 'sqlite';
+const isPg = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgres');
+const dbType = isPg ? 'postgresql' : 'sqlite';
+console.log('Veritabanı URL:', process.env.DATABASE_URL ? 'Mevcut (gizli)' : 'Tanımlanmamış');
+console.log('isPg değeri:', isPg);
+console.log('Veritabanı türü (dbType):', dbType);
 
 // Sabitler
 const DB_PATH = process.env.NODE_ENV === 'production' ? './scientfutasis.db' : ':memory:';
-const isPg = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('postgres');
 const JWT_SECRET = process.env.JWT_SECRET || 'scientfutasis-secret-key';
 
 // DB bağlantısı kurma
@@ -3022,6 +3025,7 @@ app.delete('/api/users/:id', (req, res) => {
 // Teslim tarihi geçmiş ödevleri otomatik olarak silen fonksiyon
 function cleanupOverdueHomework() {
     console.log(`Süresi geçmiş ödevleri temizleme işlemi başlatıldı. Zaman: ${getTurkishTimeString()}`);
+    console.log('Otomatik Temizleme - Veritabanı türü:', dbType, 'isPg değeri:', isPg);
     
     try {
         // Türkiye saati ile şu anki tarihi al
@@ -3158,6 +3162,7 @@ process.on('SIGTERM', () => {
 // 5. Süresi geçmiş ödevleri temizle
 app.post('/api/homework/cleanup', (req, res) => {
     console.log('Süresi geçmiş ödevleri temizleme isteği alındı');
+    console.log('API Cleanup - Veritabanı türü:', dbType, 'isPg değeri:', isPg);
     
     try {
         // Türkiye saati ile şu anki tarihi al
