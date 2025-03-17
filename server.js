@@ -263,14 +263,43 @@ app.use((req, res, next) => {
 app.use(express.static(__dirname));
 
 // Dosya yükleme için klasör oluşturma
-const uploadDir = path.join(__dirname, 'uploads');
+const renderBasePath = '/opt/render/project/src';
+const isRunningOnRender = fs.existsSync(renderBasePath);
+const uploadDir = isRunningOnRender 
+    ? path.join(renderBasePath, 'uploads') 
+    : path.join(__dirname, 'uploads');
+
+console.log('Uploads klasörü yolu:', uploadDir);
+console.log('isRunningOnRender:', isRunningOnRender);
+
 if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+    console.log(`Uploads klasörü (${uploadDir}) bulunamadı, oluşturuluyor...`);
+    try {
+        fs.mkdirSync(uploadDir, { recursive: true });
+        console.log('Uploads klasörü başarıyla oluşturuldu.');
+        // Klasörün izinlerini kontrol et ve logla
+        const stats = fs.statSync(uploadDir);
+        console.log('Uploads klasörü izinleri:', stats.mode.toString(8));
+    } catch (error) {
+        console.error('Uploads klasörü oluşturulurken hata:', error);
+    }
 }
 
 // Dosya yükleme ayarları
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
+        // Mevcut olduğundan emin ol
+        if (!fs.existsSync(uploadDir)) {
+            console.log('Uploads klasörü tekrar kontrol edildi, bulunamadı. Yeniden oluşturuluyor...');
+            try {
+                fs.mkdirSync(uploadDir, { recursive: true });
+                console.log('Uploads klasörü başarıyla yeniden oluşturuldu.');
+            } catch (dirError) {
+                console.error('Uploads klasörü oluşturulurken hata:', dirError);
+            }
+        }
+        
+        console.log('Dosya yükleme hedefi:', uploadDir);
         cb(null, uploadDir);
     },
     filename: function (req, file, cb) {
@@ -290,6 +319,11 @@ const storage = multer.diskStorage({
         // Dosya adında güvenlik için zararlı karakterleri temizle, ama Türkçe karakterleri koru
         const safeName = originalName.replace(/[\/\\:*?"<>|]/g, '_');
         console.log(`Orijinal dosya adı: ${file.originalname}, Kayıt edilecek: ${safeName}`);
+        
+        // Dosyanın tam yolunu da logla
+        const fullPath = path.join(uploadDir, safeName);
+        console.log('Oluşturulacak tam dosya yolu:', fullPath);
+        
         cb(null, safeName);
     }
 });
@@ -2427,10 +2461,19 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         const now = new Date().toISOString();
     
     // Dosya bilgileri
-        const filePath = file ? file.path : null;
+        let filePath = file ? file.path : null;
         // Dosya adını düzgün şekilde kaydet - filename zaten filename handler'da dönüştürüldü
         const fileName = file ? file.filename : null;
         const fileSize = file ? file.size : null;
+        
+        // Render.com üzerinde çalışıyorsa, mutlak dosya yollarını kullan
+        if (file && isRunningOnRender) {
+            // Render'da file.path içinde tam yol olmayabilir, bu durumda oluşturalım
+            if (!filePath.startsWith('/')) {
+                filePath = path.join(uploadDir, fileName);
+            }
+            console.log('Render.com üzerinde dosya yolu düzeltildi:', filePath);
+        }
         
         // Dosya bilgilerini loglayalım
         if (file) {
@@ -2438,7 +2481,8 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
                 path: filePath,
                 name: fileName,
                 originalName: file.originalname,
-                size: fileSize
+                size: fileSize,
+                isOnRender: isRunningOnRender
             });
         }
         
@@ -2745,6 +2789,14 @@ app.get('/api/grades/download/:id', (req, res) => {
             const __dirnameFull = path.resolve(__dirname);
             const fileBaseName = path.basename(filePath);
             
+            // Render.com için özel yollar
+            const renderBasePath = '/opt/render/project/src';
+            const isRunningOnRender = fs.existsSync(renderBasePath);
+            
+            console.log('isRunningOnRender:', isRunningOnRender);
+            console.log('__dirname:', __dirname);
+            console.log('__dirnameFull:', __dirnameFull);
+            
             let possiblePaths = [
                 filePath,                                                       // Veritabanından gelen orijinal yol
                 path.join(__dirname, 'uploads', fileBaseName),                  // uploads klasöründe dosya adı
@@ -2757,6 +2809,20 @@ app.get('/api/grades/download/:id', (req, res) => {
                 path.join(__dirnameFull, 'uploads', path.basename(fileName)),   // Tam yolda uploads ve dosya adı
                 path.join(__dirnameFull, path.basename(fileName))               // Tam yolda dosya adı
             ];
+            
+            // Render.com özel yollarını ekle
+            if (isRunningOnRender) {
+                possiblePaths = possiblePaths.concat([
+                    path.join(renderBasePath, fileBaseName),                       // Render ana dizininde dosya adı
+                    path.join(renderBasePath, 'uploads', fileBaseName),            // Render uploads klasöründe dosya adı
+                    path.join(renderBasePath, fileName),                           // Render ana dizininde file_name
+                    path.join(renderBasePath, 'uploads', fileName),                // Render uploads klasöründe file_name
+                    path.join(renderBasePath, 'uploads', path.basename(filePath)), // Render'da dosya yolu basename'i
+                    // Render.com'da klasör yaratma sırasında oluşabilecek alt dizinler için
+                    '/opt/render/project/src/uploads/' + fileBaseName,
+                    '/opt/render/project/src/uploads/' + fileName
+                ]);
+            }
             
             console.log('Kontrol edilecek olası dosya yolları:', possiblePaths);
             
@@ -2794,11 +2860,50 @@ app.get('/api/grades/download/:id', (req, res) => {
             } else {
                 console.error(`Dosya hiçbir yerde bulunamadı!`);
                 console.error(`Kontrol edilen yollar:`, possiblePaths);
-                return res.status(404).json({ 
-                    success: false, 
-                    message: 'Dosya fiziksel olarak bulunamadı',
-                    checkedPaths: possiblePaths
-                });
+                
+                // Yükleme sırasında oluşturulan uploads klasörünü kontrol et
+                try {
+                    let uploadDirResult = "";
+                    if (isRunningOnRender) {
+                        uploadDirResult = "Render.com'da uploads klasörü kontrolü: \n";
+                        if (fs.existsSync('/opt/render/project/src/uploads')) {
+                            uploadDirResult += "- /opt/render/project/src/uploads klasörü mevcut\n";
+                            // Klasörün içeriğini kontrol et
+                            const files = fs.readdirSync('/opt/render/project/src/uploads');
+                            uploadDirResult += `- İçindeki dosyalar (${files.length}): ${files.join(', ')}\n`;
+                        } else {
+                            uploadDirResult += "- /opt/render/project/src/uploads klasörü bulunamadı\n";
+                        }
+                    } else {
+                        uploadDirResult = "Lokal ortamda uploads klasörü kontrolü: \n";
+                        if (fs.existsSync(path.join(__dirname, 'uploads'))) {
+                            uploadDirResult += "- ./uploads klasörü mevcut\n";
+                            // Klasörün içeriğini kontrol et
+                            const files = fs.readdirSync(path.join(__dirname, 'uploads'));
+                            uploadDirResult += `- İçindeki dosyalar (${files.length}): ${files.join(', ')}\n`;
+                        } else {
+                            uploadDirResult += "- ./uploads klasörü bulunamadı\n";
+                        }
+                    }
+                    
+                    console.log(uploadDirResult);
+                    
+                    // Klasör içeriğini hata mesajına ekle
+                    return res.status(404).json({ 
+                        success: false, 
+                        message: 'Dosya fiziksel olarak bulunamadı',
+                        checkedPaths: possiblePaths,
+                        uploadDirInfo: uploadDirResult
+                    });
+                } catch (dirError) {
+                    console.error("Klasör kontrolü sırasında hata:", dirError);
+                    return res.status(404).json({ 
+                        success: false, 
+                        message: 'Dosya fiziksel olarak bulunamadı',
+                        checkedPaths: possiblePaths,
+                        dirError: dirError.message
+                    });
+                }
             }
         });
     } catch (error) {
