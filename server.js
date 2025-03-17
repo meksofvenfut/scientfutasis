@@ -2621,7 +2621,7 @@ app.delete('/api/grades/delete/:id', (req, res) => {
 // 5. Sınav notu dosyasını indir
 app.get('/api/grades/download/:id', (req, res) => {
     try {
-    const gradeId = req.params.id;
+        const gradeId = req.params.id;
         console.log('Sınav notu dosyası indirme isteği alındı:', gradeId);
         
         if (!gradeId) {
@@ -2653,12 +2653,15 @@ app.get('/api/grades/download/:id', (req, res) => {
             }
             
             if (!row || !row.file_path) {
-                console.log(`${gradeId} ID'li sınav notuna ait dosya bulunamadı`);
+                console.log(`${gradeId} ID'li sınav notuna ait dosya bilgisi bulunamadı`);
                 return res.status(404).json({ 
                     success: false, 
                     message: 'Dosya bulunamadı' 
                 });
             }
+            
+            // Dosya bilgilerini logla
+            console.log('Veritabanından alınan dosya bilgileri:', row);
             
             // Eğer dosya varsa indirme işlemi başlat
             const filePath = row.file_path;
@@ -2667,43 +2670,33 @@ app.get('/api/grades/download/:id', (req, res) => {
             
             console.log(`Dosya indiriliyor: ${filePath} - ${fileName}`);
             
-            // Dosyanın varlığını kontrol et
-            if (!fs.existsSync(filePath)) {
-                // Uploads klasörü içinde deneyelim
-                const uploadsPath = path.join(__dirname, 'uploads', path.basename(filePath));
-                console.log(`Dosya ana dizinde bulunamadı, uploads klasöründe deneniyor: ${uploadsPath}`);
-                
-                if (fs.existsSync(uploadsPath)) {
-                    // Dosyayı gönder
-                    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-                    res.setHeader('Content-Type', 'application/octet-stream');
-                    
-                    const fileStream = fs.createReadStream(uploadsPath);
-                    fileStream.pipe(res);
-                    
-                    fileStream.on('error', (error) => {
-                        console.error('Dosya okuma hatası:', error);
-                        if (!res.headersSent) {
-                            res.status(500).json({ 
-                                success: false, 
-                                message: 'Dosya okuma hatası', 
-                                error: error.message 
-                            });
-                        }
-                    });
-                } else {
-                    console.error(`Dosya fiziksel olarak bulunamadı: ${filePath} veya ${uploadsPath}`);
-                    return res.status(404).json({ 
-                        success: false, 
-                        message: 'Dosya fiziksel olarak bulunamadı' 
-                    });
+            // Olası dosya yollarını kontrol et
+            let possiblePaths = [
+                filePath,                                          // Orijinal yol
+                path.join(__dirname, 'uploads', path.basename(filePath)), // Uploads klasöründe
+                path.join(__dirname, path.basename(filePath)),            // Ana dizinde
+                path.join(__dirname, 'uploads', fileName),                // Sadece dosya adı ile
+                path.resolve(filePath)                                    // Mutlak yol
+            ];
+            
+            console.log('Kontrol edilecek olası dosya yolları:', possiblePaths);
+            
+            // Dosya yollarını kontrol et ve ilk bulunanı kullan
+            let foundPath = null;
+            for (const pathToCheck of possiblePaths) {
+                if (fs.existsSync(pathToCheck)) {
+                    foundPath = pathToCheck;
+                    console.log(`Dosya bulundu: ${foundPath}`);
+                    break;
                 }
-            } else {
+            }
+            
+            if (foundPath) {
                 // Dosyayı gönder
                 res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
                 res.setHeader('Content-Type', 'application/octet-stream');
                 
-                const fileStream = fs.createReadStream(filePath);
+                const fileStream = fs.createReadStream(foundPath);
                 fileStream.pipe(res);
                 
                 fileStream.on('error', (error) => {
@@ -2715,6 +2708,14 @@ app.get('/api/grades/download/:id', (req, res) => {
                             error: error.message 
                         });
                     }
+                });
+            } else {
+                console.error(`Dosya hiçbir yerde bulunamadı!`);
+                console.error(`Kontrol edilen yollar:`, possiblePaths);
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'Dosya fiziksel olarak bulunamadı',
+                    checkedPaths: possiblePaths
                 });
             }
         });
