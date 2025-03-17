@@ -783,10 +783,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         .then(data => {
                             if (data && data.success) {
                                 console.log('Süresi geçmiş ödevler temizlendi:', data.message);
+                                showNotification(`${data.message}`, 'success');
                                 // Ödevleri yeniden yükle
                                 fetchHomeworks();
                             } else {
                                 console.error('Süresi geçmiş ödevleri temizlerken hata:', data?.message || 'Bilinmeyen hata');
+                                showNotification(`Temizleme işleminde bir sorun oluştu: ${data?.message || 'Bilinmeyen hata'}`, 'error');
                                 // Hata oluştuğunda bile ödevleri göstermeye devam et
                                 displayHomeworks();
                             }
