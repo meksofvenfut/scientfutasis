@@ -275,7 +275,7 @@ console.log('isRunningOnRender:', isRunningOnRender);
 if (!fs.existsSync(uploadDir)) {
     console.log(`Uploads klasörü (${uploadDir}) bulunamadı, oluşturuluyor...`);
     try {
-        fs.mkdirSync(uploadDir, { recursive: true });
+    fs.mkdirSync(uploadDir, { recursive: true });
         console.log('Uploads klasörü başarıyla oluşturuldu.');
         // Klasörün izinlerini kontrol et ve logla
         const stats = fs.statSync(uploadDir);
@@ -480,11 +480,78 @@ db.serialize(() => {
     }
     
     // Tabloları oluştur
-    db.run(userTableSQL);
-    db.run(scheduleTableSQL);
-    db.run(homeworkTableSQL);
-    db.run(announcementsTableSQL);
-    db.run(gradesTableSQL);
+    console.log('Veritabanı tabloları oluşturuluyor...');
+
+    // Veritabanı bağlantısı ve tablo oluşturma kodları
+    db.run(userTableSQL, [], function(err) {
+        if (err) {
+            console.error('Kullanıcı tablosu oluşturma hatası:', err.message);
+        } else {
+            console.log('Kullanıcı tablosu başarıyla oluşturuldu veya zaten vardı');
+        }
+    });
+
+    db.run(scheduleTableSQL, [], function(err) {
+        if (err) {
+            console.error('Program tablosu oluşturma hatası:', err.message);
+        } else {
+            console.log('Program tablosu başarıyla oluşturuldu veya zaten vardı');
+        }
+    });
+
+    db.run(homeworkTableSQL, [], function(err) {
+        if (err) {
+            console.error('Ödev tablosu oluşturma hatası:', err.message);
+        } else {
+            console.log('Ödev tablosu başarıyla oluşturuldu veya zaten vardı');
+        }
+    });
+
+    db.run(announcementsTableSQL, [], function(err) {
+        if (err) {
+            console.error('Duyurular tablosu oluşturma hatası:', err.message);
+        } else {
+            console.log('Duyurular tablosu başarıyla oluşturuldu veya zaten vardı');
+        }
+    });
+
+    db.run(gradesTableSQL, [], function(err) {
+        if (err) {
+            console.error('Sınav notları tablosu oluşturma hatası:', err.message);
+        } else {
+            console.log('Sınav notları tablosu başarıyla oluşturuldu veya zaten vardı');
+            
+            // PostgreSQL için ALTER TABLE ile file_content sütununu ekle
+            if (isPg) {
+                // Sütun var mı kontrol et ve yoksa ekle
+                const checkColumnSQL = `
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'grades' AND column_name = 'file_content'
+                `;
+                
+                // PostgreSQL için pool.query kullanılmalı
+                pool.query(checkColumnSQL)
+                    .then(result => {
+                        if (result.rows.length === 0) {
+                            console.log('file_content sütunu bulunamadı, ekleniyor...');
+                            const alterTableSQL = `ALTER TABLE grades ADD COLUMN file_content BYTEA`;
+                            
+                            return pool.query(alterTableSQL);
+                        } else {
+                            console.log('file_content sütunu zaten mevcut');
+                            return Promise.resolve();
+                        }
+                    })
+                    .then(() => {
+                        console.log('Sütun kontrolü ve ekleme işlemi tamamlandı');
+                    })
+                    .catch(err => {
+                        console.error('PostgreSQL sütun işlemleri hatası:', err.message);
+                    });
+            }
+        }
+    });
 
     // Var olan veritabanında importance sütunu var mı kontrol et
     if (isPg) {
@@ -2500,7 +2567,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         
         const now = new Date().toISOString();
     
-        // Dosya bilgileri
+    // Dosya bilgileri
         let filePath = file ? file.path : null;
         // Dosya adını düzgün şekilde kaydet - filename zaten filename handler'da dönüştürüldü
         const fileName = file ? file.filename : null;
@@ -2562,7 +2629,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
                 return res.status(500).json({ 
                     success: false, 
                     message: 'Sınav notu eklenirken bir hata oluştu', 
-                    error: err.message
+                    error: err.message 
                 });
             }
             
@@ -2578,17 +2645,17 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
             
             console.log('Yeni sınav notu eklendi - ID:', gradeId);
             return res.json({
-                success: true, 
-                message: 'Sınav notu başarıyla eklendi',
+            success: true, 
+                message: 'Sınav notu başarıyla eklendi', 
                 id: gradeId
-            });
         });
+    });
     } catch (error) {
         console.error('Sınav notu ekleme hatası:', error);
         return res.status(500).json({
-            success: false,
-            message: 'Sınav notu eklenirken bir hata oluştu',
-            error: error.message
+            success: false, 
+            message: 'Sınav notu eklenirken bir hata oluştu', 
+            error: error.message 
         });
     }
 });
@@ -2596,7 +2663,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
 // 3. Sınav notu güncelleme
 app.post('/api/grades/update/:id', upload.single('file'), (req, res) => {
     try {
-        const gradeId = req.params.id;
+    const gradeId = req.params.id;
         console.log('Sınav notu güncelleme isteği alındı:', gradeId);
         
         // Kullanıcı tipi kontrolü - sadece admin kullanıcılar güncelleyebilir
@@ -2660,7 +2727,7 @@ app.post('/api/grades/update/:id', upload.single('file'), (req, res) => {
             
             console.log('Yeni dosya bilgileri:', {
                 path: filePath,
-                name: fileName, 
+                name: fileName,
                 size: fileSize,
                 hasBinaryContent: fileContent ? 'Evet' : 'Hayır'
             });
@@ -2820,7 +2887,7 @@ app.delete('/api/grades/delete/:id', (req, res) => {
 // 5. Sınav notu dosyasını indir
 app.get('/api/grades/download/:id', (req, res) => {
     try {
-        const gradeId = req.params.id;
+    const gradeId = req.params.id;
         console.log('Sınav notu dosyası indirme isteği alındı:', gradeId);
         
         if (!gradeId) {
@@ -2941,24 +3008,24 @@ app.get('/api/grades/download/:id', (req, res) => {
             }
             
             if (foundPath) {
-                // Dosyayı gönder
-                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-                res.setHeader('Content-Type', 'application/octet-stream');
-                
+                    // Dosyayı gönder
+                    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+                    res.setHeader('Content-Type', 'application/octet-stream');
+                    
                 const fileStream = fs.createReadStream(foundPath);
-                fileStream.pipe(res);
-                
-                fileStream.on('error', (error) => {
-                    console.error('Dosya okuma hatası:', error);
-                    if (!res.headersSent) {
-                        res.status(500).json({ 
-                            success: false, 
-                            message: 'Dosya okuma hatası', 
-                            error: error.message 
-                        });
-                    }
-                });
-            } else {
+                    fileStream.pipe(res);
+                    
+                    fileStream.on('error', (error) => {
+                        console.error('Dosya okuma hatası:', error);
+                        if (!res.headersSent) {
+                            res.status(500).json({ 
+                                success: false, 
+                                message: 'Dosya okuma hatası', 
+                                error: error.message 
+                            });
+                        }
+                    });
+                } else {
                 console.error(`Dosya hiçbir yerde bulunamadı!`);
                 console.error(`Kontrol edilen yollar:`, possiblePaths);
                 
@@ -2974,8 +3041,8 @@ app.get('/api/grades/download/:id', (req, res) => {
                             uploadDirResult += `- İçindeki dosyalar (${files.length}): ${files.join(', ')}\n`;
                         } else {
                             uploadDirResult += "- /opt/render/project/src/uploads klasörü bulunamadı\n";
-                        }
-                    } else {
+                }
+            } else {
                         uploadDirResult = "Lokal ortamda uploads klasörü kontrolü: \n";
                         if (fs.existsSync(path.join(__dirname, 'uploads'))) {
                             uploadDirResult += "- ./uploads klasörü mevcut\n";
@@ -2991,7 +3058,7 @@ app.get('/api/grades/download/:id', (req, res) => {
                     
                     // Klasör içeriğini hata mesajına ekle
                     return res.status(404).json({ 
-                        success: false, 
+                            success: false, 
                         message: 'Dosya fiziksel olarak bulunamadı',
                         checkedPaths: possiblePaths,
                         uploadDirInfo: uploadDirResult
