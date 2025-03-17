@@ -3013,30 +3013,64 @@ function cleanupOverdueHomework() {
     
     // Türkiye saati ile şu anki tarihi al
     const now = new Date();
+    // Türkiye saati Offset'i: UTC+3 (saat olarak 3*60*60*1000 milisaniye)
+    const turkishOffset = 3 * 60 * 60 * 1000;
+    // Yerel saat ile UTC arasındaki fark
+    const localOffset = now.getTimezoneOffset() * 60 * 1000;
+    // Türkiye saati için düzeltilmiş tarih
+    const turkishNow = new Date(now.getTime() + localOffset + turkishOffset);
+    
     // Bir gün öncesini hesapla (24 saat öncesi)
-    const oneDayAgo = new Date(now);
-    oneDayAgo.setDate(now.getDate() - 1);
+    const oneDayAgo = new Date(turkishNow);
+    oneDayAgo.setDate(turkishNow.getDate() - 1);
     
     // SQLite için tarih formatına çevir
     const formattedDate = oneDayAgo.toISOString().split('T')[0]; // "YYYY-MM-DD" formatı
     
-    let query, params;
+    console.log(`Temizleme için kullanılan tarih: ${formattedDate} - Şu anki TR zamanı: ${turkishNow.toISOString()}`);
+    
+    // Önce temizlenecek ödevleri görmek için sorgu yap
+    let checkQuery, checkParams;
     
     if (dbType === 'postgresql') {
-        query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
-        params = [formattedDate];
+        checkQuery = `SELECT id, title, "dueDate" FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
+        checkParams = [formattedDate];
     } else {
-        query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-        params = [formattedDate];
+        checkQuery = `SELECT id, title, dueDate FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+        checkParams = [formattedDate];
     }
     
-    db.run(query, params, function(err) {
+    db.all(checkQuery, checkParams, (err, rows) => {
         if (err) {
-            console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
+            console.error('Silinecek ödevleri kontrol ederken hata:', err.message);
             return;
         }
         
-        console.log(`Temizleme tamamlandı. ${this.changes} adet süresi 1 günden fazla geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+        console.log(`Silinecek ${rows.length} adet ödev bulundu:`, rows);
+        
+        // Eğer silinecek ödev varsa silme işlemini yap
+        if (rows.length > 0) {
+            let query, params;
+            
+            if (dbType === 'postgresql') {
+                query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
+                params = [formattedDate];
+            } else {
+                query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+                params = [formattedDate];
+            }
+            
+            db.run(query, params, function(err) {
+                if (err) {
+                    console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
+                    return;
+                }
+                
+                console.log(`Temizleme tamamlandı. ${this.changes} adet süresi 1 günden fazla geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+            });
+        } else {
+            console.log('Silinecek süresi geçmiş ödev bulunamadı');
+        }
     });
 }
 
@@ -3077,37 +3111,78 @@ app.post('/api/homework/cleanup', (req, res) => {
     
     // Türkiye saati ile şu anki tarihi al
     const now = new Date();
+    // Türkiye saati Offset'i: UTC+3 (saat olarak 3*60*60*1000 milisaniye)
+    const turkishOffset = 3 * 60 * 60 * 1000;
+    // Yerel saat ile UTC arasındaki fark
+    const localOffset = now.getTimezoneOffset() * 60 * 1000;
+    // Türkiye saati için düzeltilmiş tarih
+    const turkishNow = new Date(now.getTime() + localOffset + turkishOffset);
+    
     // Bir gün öncesini hesapla (24 saat öncesi)
-    const oneDayAgo = new Date(now);
-    oneDayAgo.setDate(now.getDate() - 1);
+    const oneDayAgo = new Date(turkishNow);
+    oneDayAgo.setDate(turkishNow.getDate() - 1);
     
     // SQLite için tarih formatına çevir
     const formattedDate = oneDayAgo.toISOString().split('T')[0]; // "YYYY-MM-DD" formatı
     
-    let query, params;
+    console.log(`API - Temizleme için kullanılan tarih: ${formattedDate} - Şu anki TR zamanı: ${turkishNow.toISOString()}`);
+    
+    // Önce temizlenecek ödevleri görmek için sorgu yap
+    let checkQuery, checkParams;
     
     if (dbType === 'postgresql') {
-        query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
-        params = [formattedDate];
+        checkQuery = `SELECT id, title, "dueDate" FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
+        checkParams = [formattedDate];
     } else {
-        query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
-        params = [formattedDate];
+        checkQuery = `SELECT id, title, dueDate FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+        checkParams = [formattedDate];
     }
     
-    db.run(query, params, function(err) {
+    db.all(checkQuery, checkParams, (err, rows) => {
         if (err) {
-            console.error('Süresi geçmiş ödevleri temizlerken hata:', err.message);
+            console.error('API - Silinecek ödevleri kontrol ederken hata:', err.message);
             return res.status(500).json({ 
                 success: false, 
-                message: 'Ödevler temizlenirken bir hata oluştu'
+                message: 'Ödevler kontrol edilirken bir hata oluştu'
             });
         }
         
-        console.log(`Temizleme tamamlandı. ${this.changes} adet süresi 1 günden fazla geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+        console.log(`API - Silinecek ${rows.length} adet ödev bulundu:`, rows);
         
-        return res.json({ 
-            success: true, 
-            message: `${this.changes} adet süresi geçmiş ödev silindi`
-        });
+        // Eğer silinecek ödev varsa silme işlemini yap
+        if (rows.length > 0) {
+            let query, params;
+            
+            if (dbType === 'postgresql') {
+                query = `DELETE FROM homework WHERE "dueDate" < $1 AND "isCompleted" = false`;
+                params = [formattedDate];
+            } else {
+                query = `DELETE FROM homework WHERE dueDate < ? AND isCompleted = 0`;
+                params = [formattedDate];
+            }
+            
+            db.run(query, params, function(err) {
+                if (err) {
+                    console.error('API - Süresi geçmiş ödevleri temizlerken hata:', err.message);
+                    return res.status(500).json({ 
+                        success: false, 
+                        message: 'Ödevler temizlenirken bir hata oluştu'
+                    });
+                }
+                
+                console.log(`API - Temizleme tamamlandı. ${this.changes} adet süresi 1 günden fazla geçmiş ödev silindi. Zaman: ${getTurkishTimeString()}`);
+                
+                return res.json({ 
+                    success: true, 
+                    message: `${this.changes} adet süresi geçmiş ödev silindi`
+                });
+            });
+        } else {
+            console.log('API - Silinecek süresi geçmiş ödev bulunamadı');
+            return res.json({
+                success: true,
+                message: 'Silinecek süresi geçmiş ödev bulunamadı'
+            });
+        }
     });
 }); 

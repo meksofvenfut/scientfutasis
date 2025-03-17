@@ -823,12 +823,20 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Her ödev için bir kart oluştur
         homeworkData.forEach(homework => {
-            // Türkiye saatini kullan
-            const dueDate = new Date(homework.dueDate + 'T23:59:59');
+            // Türkiye saatini kullan - saat bilgisini elle ekleyip tarihi düzgün oluştur
+            const dueDate = new Date(`${homework.dueDate}T23:59:59`);
             
-            // Şu anki Türkiye saatini al
+            // Şu anki Türkiye saatini al (daha güvenilir bir yöntemle)
             const now = new Date();
-            const turkishNow = new Date(now.toLocaleString('tr-TR', {timeZone: 'Europe/Istanbul'}));
+            // Türkiye saati Offset'i: UTC+3 (saat olarak 3*60*60*1000 milisaniye)
+            const turkishOffset = 3 * 60 * 60 * 1000;
+            // Yerel saat ile UTC arasındaki fark
+            const localOffset = now.getTimezoneOffset() * 60 * 1000;
+            // Türkiye saati için düzeltilmiş tarih
+            const turkishNow = new Date(now.getTime() + localOffset + turkishOffset);
+            
+            console.log("Ödev tarihi: ", homework.dueDate, "İşlenen tarih: ", dueDate.toISOString());
+            console.log("Şimdiki zaman: ", turkishNow.toISOString());
             
             // Teslim tarihi ve bugünün tarihini karşılaştırmak için tarih kısımlarını ayıkla
             const dueDateDay = dueDate.getDate();
@@ -867,19 +875,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 day: 'numeric'
             });
             
-            // Kalan gün sayısını hesapla
-            const timeDiff = dueDate.getTime() - turkishNow.getTime();
-            const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+            // Kalan gün sayısını hesapla - NaN sorununa karşı daha güvenli bir hesaplama
             let daysText = '';
-            
-            if (homework.isCompleted) {
-                daysText = 'Tamamlandı';
-            } else if (isOverdue) {
-                daysText = `${Math.abs(daysDiff)} gün gecikti`;
-            } else if (isDueToday) {
-                daysText = 'Bugün teslim';
-            } else {
-                daysText = `${daysDiff} gün kaldı`;
+            try {
+                if (homework.isCompleted) {
+                    daysText = 'Tamamlandı';
+                } else if (isOverdue) {
+                    const timeDiff = turkishNow.getTime() - dueDate.getTime();
+                    const daysDiff = Math.ceil(Math.abs(timeDiff) / (1000 * 3600 * 24));
+                    daysText = `${daysDiff} gün gecikti`;
+                } else if (isDueToday) {
+                    daysText = 'Bugün teslim';
+                } else {
+                    const timeDiff = dueDate.getTime() - turkishNow.getTime();
+                    const daysDiff = Math.ceil(Math.abs(timeDiff) / (1000 * 3600 * 24));
+                    daysText = `${daysDiff} gün kaldı`;
+                }
+            } catch (error) {
+                console.error("Gün hesaplamada hata:", error);
+                daysText = homework.isCompleted ? 'Tamamlandı' : 'Tarih hesaplanamadı';
             }
             
             // Başlık belirle
