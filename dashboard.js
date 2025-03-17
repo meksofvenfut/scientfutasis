@@ -1493,23 +1493,34 @@ document.addEventListener('DOMContentLoaded', () => {
                     let createdDate = isValidDate(createdDateStr) ? new Date(createdDateStr) : new Date();
                     let updatedDate = isValidDate(updatedDateStr) ? new Date(updatedDateStr) : new Date();
                     
+                    // Türkiye saati için düzeltme (+3 saat)
+                    // Türkiye saati Offset'i: UTC+3 (saat olarak 3*60*60*1000 milisaniye)
+                    const turkishOffset = 3 * 60 * 60 * 1000;
+                    // Yerel saat ile UTC arasındaki fark
+                    const localOffset = new Date().getTimezoneOffset() * 60 * 1000;
+                    
+                    // Türkiye saati için düzeltilmiş tarihler
+                    let turkishCreatedDate = new Date(createdDate.getTime() + localOffset + turkishOffset);
+                    let turkishUpdatedDate = new Date(updatedDate.getTime() + localOffset + turkishOffset);
+                    
                     // Hangisini göstereceğimizi belirle
-                    let displayDate = createdDate;
+                    let displayDate = turkishCreatedDate;
                     let datePrefix = "Oluşturulma: ";
                     
                     // Eğer güncelleme tarihi, oluşturma tarihinden farklıysa ve geçerliyse
-                    if (updatedDate > createdDate && !isNaN(updatedDate.getTime())) {
-                        displayDate = updatedDate;
+                    if (turkishUpdatedDate > turkishCreatedDate && !isNaN(turkishUpdatedDate.getTime())) {
+                        displayDate = turkishUpdatedDate;
                         datePrefix = "Güncelleme: ";
                     }
                     
-                    // Tarihi formatla
+                    // Tarihi formatla - doğrudan Türkçe formatında göster
                     let dateStr = datePrefix + displayDate.toLocaleString('tr-TR', {
                         day: 'numeric',
                         month: 'long',
                         year: 'numeric',
                         hour: '2-digit',
-                        minute: '2-digit'
+                        minute: '2-digit',
+                        timeZone: 'Europe/Istanbul' // Türkiye saat dilimini belirt
                     });
                     
                     // Kart elementini oluştur
@@ -1645,23 +1656,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 let createdDate = isValidDate(createdDateStr) ? new Date(createdDateStr) : new Date();
                 let updatedDate = isValidDate(updatedDateStr) ? new Date(updatedDateStr) : new Date();
                 
+                // Türkiye saati için düzeltme (+3 saat)
+                // Türkiye saati Offset'i: UTC+3 (saat olarak 3*60*60*1000 milisaniye)
+                const turkishOffset = 3 * 60 * 60 * 1000;
+                // Yerel saat ile UTC arasındaki fark
+                const localOffset = new Date().getTimezoneOffset() * 60 * 1000;
+                
+                // Türkiye saati için düzeltilmiş tarihler
+                let turkishCreatedDate = new Date(createdDate.getTime() + localOffset + turkishOffset);
+                let turkishUpdatedDate = new Date(updatedDate.getTime() + localOffset + turkishOffset);
+                
                 // Hangisini göstereceğimizi belirle
-                let displayDate = createdDate;
+                let displayDate = turkishCreatedDate;
                 let datePrefix = "Oluşturulma: ";
                 
                 // Eğer güncelleme tarihi, oluşturma tarihinden farklıysa ve geçerliyse
-                if (updatedDate > createdDate && !isNaN(updatedDate.getTime())) {
-                    displayDate = updatedDate;
+                if (turkishUpdatedDate > turkishCreatedDate && !isNaN(turkishUpdatedDate.getTime())) {
+                    displayDate = turkishUpdatedDate;
                     datePrefix = "Güncelleme: ";
                 }
                 
-                // Tarihi formatla
+                // Tarihi formatla - doğrudan Türkçe formatında göster
                 let dateStr = datePrefix + displayDate.toLocaleString('tr-TR', {
                     day: 'numeric',
                     month: 'long',
                     year: 'numeric',
                     hour: '2-digit',
-                    minute: '2-digit'
+                    minute: '2-digit',
+                    timeZone: 'Europe/Istanbul' // Türkiye saat dilimini belirt
                 });
                 
                 // Kart elementini oluştur
