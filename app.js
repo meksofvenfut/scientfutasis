@@ -191,8 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
             // Başarılı giriş
             showMessage(`${userType === 'student' ? 'Öğrenci' : userType === 'teacher' ? 'Öğretmen' : 'Yönetici'} olarak giriş başarılı!`, 'success');
             
-            // Kullanıcı bilgilerini sakla (gerçek uygulamada token kullanılabilir)
+            // Kullanıcı bilgilerini sakla
             localStorage.setItem('user', JSON.stringify(data.user));
+            // JWT token'ı sakla
+            localStorage.setItem('token', data.token);
             
             // Tüm önbelleği temizle
             try {

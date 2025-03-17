@@ -25,18 +25,29 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Oturum kontrolü
     let userInfo;
+    const token = localStorage.getItem('token');
+    
+    // Token yoksa login sayfasına yönlendir
+    if (!token) {
+        console.log('Token bulunamadı, giriş sayfasına yönlendiriliyor...');
+        window.location.href = '/index.html';
+        return;
+    }
+    
     try {
         userInfo = JSON.parse(localStorage.getItem('user'));
         console.log('Yüklenen kullanıcı bilgisi:', userInfo);
+        
+        if (!userInfo) {
+            console.log('Kullanıcı bilgisi bulunamadı, giriş sayfasına yönlendiriliyor...');
+            window.location.href = '/index.html';
+            return;
+        }
     } catch (e) {
         console.error('Kullanıcı bilgisi yüklenirken hata:', e);
-        // Geçici test kullanıcısı oluştur
-        userInfo = {
-            username: "Kullanıcı",
-            userType: "admin",
-            email: "kullanici@ornek.com"
-        };
-        localStorage.setItem('user', JSON.stringify(userInfo));
+        // Giriş sayfasına yönlendir
+        window.location.href = '/index.html';
+        return;
     }
     
     // Kullanıcı tipini kontrol et - sadece yöneticiler düzenleyebilsin
@@ -139,11 +150,14 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Çıkış yapma fonksiyonu
     function logout() {
-        // Kullanıcı oturumunu sonlandır
+        // LocalStorage'dan kullanıcı bilgilerini ve token'ı temizle
         localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        localStorage.removeItem('scheduleData');
+        localStorage.removeItem('temporaryScheduleData');
         
-        // Giriş sayfasına yönlendir (göreceli yol kullanarak)
-        window.location.href = 'index.html';
+        // Giriş sayfasına yönlendir
+        window.location.href = '/index.html';
     }
     
     // Alt ikon butonları için tıklama ve hover işlemleri

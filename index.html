@@ -110,6 +110,18 @@
                 }
             });
         }
+        
+        // Sayfa yüklendiğinde localStorage'da token kontrolü yap
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('token');
+            const user = localStorage.getItem('user');
+            
+            // Eğer token ve kullanıcı bilgisi varsa, doğrudan dashboard'a yönlendir
+            if (token && user) {
+                console.log('Aktif oturum bulundu, dashboard sayfasına yönlendiriliyor...');
+                window.location.href = '/dashboard.html';
+            }
+        });
     </script>
 </body>
 </html> 

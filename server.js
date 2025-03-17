@@ -784,7 +784,7 @@ app.post('/api/login', (req, res) => {
             const token = jwt.sign(
                 { id: row.id, username: row.username, userType: userTypeValue },
                 JWT_SECRET,
-                { expiresIn: '1h' }
+                { expiresIn: '30d' } // 30 gün boyunca geçerli olacak
             );
             
             console.log('Token oluşturuldu, kullanıcı bilgileri gönderiliyor');
