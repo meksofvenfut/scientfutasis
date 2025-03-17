@@ -2088,7 +2088,12 @@ app.post('/api/announcements/add', (req, res) => {
     
     try {
         const announcementImportance = importance || 'normal';
-        const now = new Date().toISOString();
+        
+        // Türkiye saati (UTC+3) olarak şu anki zamanı al
+        const now = new Date();
+        // 3 saat ekleyerek Türkiye saatine çevir
+        now.setHours(now.getHours() + 3);
+        const turkeyTime = now.toISOString();
         
         let query, params;
         
@@ -2098,7 +2103,7 @@ app.post('/api/announcements/add', (req, res) => {
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id
             `;
-            params = [title, content, announcementImportance, now, now];
+            params = [title, content, announcementImportance, turkeyTime, turkeyTime];
         } else {
             query = `
                 INSERT INTO announcements (title, content, importance, createdAt, updatedAt)
@@ -2161,7 +2166,12 @@ app.put('/api/announcements/update/:id', (req, res) => {
     
     try {
         const announcementImportance = importance || 'normal';
-        const now = new Date().toISOString();
+        
+        // Türkiye saati (UTC+3) olarak şu anki zamanı al
+        const now = new Date();
+        // 3 saat ekleyerek Türkiye saatine çevir
+        now.setHours(now.getHours() + 3);
+        const turkeyTime = now.toISOString();
         
         let query, params;
         
@@ -2172,7 +2182,7 @@ app.put('/api/announcements/update/:id', (req, res) => {
                 WHERE id = $5
                 RETURNING id
             `;
-            params = [title, content, announcementImportance, now, announcementId];
+            params = [title, content, announcementImportance, turkeyTime, announcementId];
         } else {
             query = `
                 UPDATE announcements 
