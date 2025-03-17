@@ -391,7 +391,7 @@ db.serialize(() => {
                 content TEXT NOT NULL,
                 importance TEXT DEFAULT 'normal',
                 important BOOLEAN DEFAULT FALSE,
-                eventDate TEXT,
+                "eventDate" TEXT,
                 createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -701,6 +701,41 @@ if (isPg) {
             });
         } else if (hasFilePath) {
             console.log("PostgreSQL: grades tablosu dosya desteği ile zaten güncel.");
+        }
+    });
+    
+    // Duyurular tablosunda eventDate sütunu var mı kontrol et
+    const announcementsQuery = `
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'announcements'
+    `;
+    
+    db.all(announcementsQuery, [], (err, columns) => {
+        if (err) {
+            console.error("PostgreSQL announcements tablosu sütun bilgisi alınamadı:", err);
+            return;
+        }
+        
+        // Sütun isimlerini bir listeye çevir
+        const columnNames = columns.map(col => col.column_name);
+        
+        // eventDate sütunu var mı kontrol et (küçük harfle de olabilir)
+        const hasEventDate = columnNames.includes('eventdate') || columnNames.includes('eventDate');
+        
+        if (!hasEventDate) {
+            console.log("PostgreSQL announcements tablosuna eventDate sütunu ekleniyor...");
+            
+            // PostgreSQL için eventDate sütunu ekle
+            db.run(`ALTER TABLE announcements ADD COLUMN "eventDate" TEXT`, [], function(err) {
+                if (err) {
+                    console.error("PostgreSQL eventDate sütunu eklenemedi:", err);
+                } else {
+                    console.log("PostgreSQL: announcements tablosuna eventDate sütunu eklendi.");
+                }
+            });
+        } else {
+            console.log("PostgreSQL: announcements tablosunda eventDate sütunu zaten var.");
         }
     });
 } else {
@@ -1612,6 +1647,7 @@ app.get('/api/init', (req, res) => {
                         title TEXT NOT NULL,
                         content TEXT NOT NULL,
                         importance TEXT DEFAULT 'normal',
+                        "eventDate" TEXT,
                         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE (title)
@@ -1948,22 +1984,27 @@ function addAnnouncementExamples() {
         // Her bir duyuru için kayıt ekle
         announcements.forEach(announcement => {
             const insertQuery = isPg ?
-                `INSERT INTO announcements (title, content, importance, "createdAt", "updatedAt")
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (title) DO NOTHING` :
-                `INSERT OR IGNORE INTO announcements (title, content, importance, createdAt, updatedAt)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`;
-                
-            const insertParams = isPg ?
-                [announcement.title, announcement.content, announcement.importance, now, now] :
-                [announcement.title, announcement.content, announcement.importance];
-                
-            db.run(insertQuery, insertParams, err => {
+                `INSERT INTO announcements (title, content, importance, "eventDate", "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+            `;
+            params = [announcement.title, announcement.content, announcement.importance, announcement.eventDate || null, now, now];
+            db.run(insertQuery, params, function(err) {
                 if (err) {
-                    console.error(`Duyuru ekleme hatası (${announcement.title}):`, err.message);
-                } else {
-                    console.log(`Duyuru eklendi: ${announcement.title}`);
+                    console.error('Duyuru eklenirken hata:', err.message);
+                    return res.status(500).json({ 
+                        success: false, 
+                        message: 'Veritabanı hatası', 
+                        error: err.message 
+                    });
                 }
+                
+                console.log(`Yeni duyuru eklendi: ${announcement.title} - ID: ${this.lastID}`);
+                res.json({ 
+                    success: true, 
+                    message: 'Duyuru başarıyla eklendi',
+                    id: this.lastID 
+                });
             });
         });
     });
@@ -2196,7 +2237,7 @@ app.post('/api/announcements/add', (req, res) => {
         
         if (isPg) {
             query = `
-                INSERT INTO announcements (title, content, importance, eventDate, "createdAt", "updatedAt")
+                INSERT INTO announcements (title, content, importance, "eventDate", "createdAt", "updatedAt")
                 VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
             `;
@@ -2275,7 +2316,7 @@ app.put('/api/announcements/update/:id', (req, res) => {
         if (isPg) {
             query = `
         UPDATE announcements 
-                SET title = $1, content = $2, importance = $3, eventDate = $4, "updatedAt" = $5
+                SET title = $1, content = $2, importance = $3, "eventDate" = $4, "updatedAt" = $5
                 WHERE id = $6
                 RETURNING id
             `;
