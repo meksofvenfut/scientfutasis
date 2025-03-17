@@ -391,6 +391,7 @@ db.serialize(() => {
                 content TEXT NOT NULL,
                 importance TEXT DEFAULT 'normal',
                 important BOOLEAN DEFAULT FALSE,
+                eventDate TEXT,
                 createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -455,6 +456,7 @@ db.serialize(() => {
             content TEXT NOT NULL,
             importance TEXT DEFAULT 'normal',
             important BOOLEAN DEFAULT 0,
+            eventDate TEXT,
             createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
             updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -2161,7 +2163,7 @@ app.get('/api/announcements/get', (req, res) => {
 app.post('/api/announcements/add', (req, res) => {
     console.log('Yeni duyuru ekleme isteği alındı:', req.body);
     
-    const { title, content, importance, userType } = req.body;
+    const { title, content, importance, eventDate, userType } = req.body;
     
     // Yönetici kontrolü
     if (userType !== 'admin' && userType !== 'Yönetici') {
@@ -2194,17 +2196,17 @@ app.post('/api/announcements/add', (req, res) => {
         
         if (isPg) {
             query = `
-                INSERT INTO announcements (title, content, importance, "createdAt", "updatedAt")
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO announcements (title, content, importance, eventDate, "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
             `;
-            params = [title, content, announcementImportance, turkeyTime, turkeyTime];
+            params = [title, content, announcementImportance, eventDate || null, turkeyTime, turkeyTime];
         } else {
             query = `
-                INSERT INTO announcements (title, content, importance, createdAt, updatedAt)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO announcements (title, content, importance, eventDate, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             `;
-            params = [title, content, announcementImportance];
+            params = [title, content, announcementImportance, eventDate || null];
         }
         
         db.run(query, params, function(err) {
@@ -2239,7 +2241,7 @@ app.put('/api/announcements/update/:id', (req, res) => {
     console.log('Duyuru güncelleme isteği alındı:', req.params.id);
     
     const announcementId = req.params.id;
-    const { title, content, importance, userType } = req.body;
+    const { title, content, importance, eventDate, userType } = req.body;
     
     // Yönetici kontrolü
     if (userType !== 'admin' && userType !== 'Yönetici') {
@@ -2273,18 +2275,18 @@ app.put('/api/announcements/update/:id', (req, res) => {
         if (isPg) {
             query = `
         UPDATE announcements 
-                SET title = $1, content = $2, importance = $3, "updatedAt" = $4
-                WHERE id = $5
+                SET title = $1, content = $2, importance = $3, eventDate = $4, "updatedAt" = $5
+                WHERE id = $6
                 RETURNING id
             `;
-            params = [title, content, announcementImportance, turkeyTime, announcementId];
+            params = [title, content, announcementImportance, eventDate || null, turkeyTime, announcementId];
         } else {
             query = `
                 UPDATE announcements 
-                SET title = ?, content = ?, importance = ?, updatedAt = CURRENT_TIMESTAMP
+                SET title = ?, content = ?, importance = ?, eventDate = ?, updatedAt = CURRENT_TIMESTAMP
         WHERE id = ?
     `;
-            params = [title, content, announcementImportance, announcementId];
+            params = [title, content, announcementImportance, eventDate || null, announcementId];
         }
     
         db.run(query, params, function(err) {
