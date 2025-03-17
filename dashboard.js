@@ -760,12 +760,20 @@ document.addEventListener('DOMContentLoaded', () => {
                             'Content-Type': 'application/json'
                         }
                     })
-                    .then(response => response.json())
+                    .then(response => {
+                        // Önce response'un başarılı olup olmadığını kontrol edelim
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
                     .then(data => {
-                        if (data.success) {
+                        if (data && data.success) {
                             console.log('Süresi geçmiş ödevler temizlendi:', data.message);
                             // Ödevleri yeniden yükle
                             fetchHomeworks();
+                        } else {
+                            console.error('Süresi geçmiş ödevleri temizlerken hata:', data?.message || 'Bilinmeyen hata');
                         }
                     })
                     .catch(error => {
@@ -863,9 +871,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (isOverdue) {
                 statusClass = 'overdue';
                 statusText = 'Gecikmiş';
-            } else if (isDueToday) {
-                statusClass = 'due-today';
-                statusText = 'Bugün Teslim';
             }
             
             // Teslim tarihini formatlı göster
@@ -885,11 +890,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     const daysDiff = Math.ceil(Math.abs(timeDiff) / (1000 * 3600 * 24));
                     daysText = `${daysDiff} gün gecikti`;
                 } else if (isDueToday) {
-                    daysText = 'Bugün teslim';
+                    // Bugün teslim edilecekse sadece "Bugün" olarak göster
+                    daysText = 'Bugün';
                 } else {
                     const timeDiff = dueDate.getTime() - turkishNow.getTime();
-                    const daysDiff = Math.ceil(Math.abs(timeDiff) / (1000 * 3600 * 24));
-                    daysText = `${daysDiff} gün kaldı`;
+                    // Math.ceil yerine Math.floor kullanarak tam günü hesaplayalım
+                    // 24 saatten az kaldıysa "1 gün kaldı" yerine "Yarın teslim" diyelim
+                    const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24));
+                    if (daysDiff === 0) {
+                        daysText = 'Yarın teslim';
+                    } else {
+                        daysText = `${daysDiff} gün kaldı`;
+                    }
                 }
             } catch (error) {
                 console.error("Gün hesaplamada hata:", error);
@@ -1230,7 +1242,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // Modal dışına tıklandığında modalı kapat
+    // Modal dışına tıklandığında kapat
     window.addEventListener('click', (e) => {
         document.querySelectorAll('.modal').forEach(modal => {
             if (e.target === modal) {

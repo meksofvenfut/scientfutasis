@@ -1556,20 +1556,6 @@ html[data-theme="dark"] .schedule-table tr:hover td {
     border-top: 4px solid #F44336;
 }
 
-.homework-card.due-today {
-    border-left-color: #ff9800;
-}
-
-.days-left.due-today {
-    background-color: #ff9800;
-    color: #fff;
-}
-
-.status-badge.due-today {
-    background-color: #ff9800;
-    color: #fff;
-}
-
 .card-header {
     padding: 16px;
     background-color: rgba(var(--accent-color-rgb), 0.05);
@@ -1605,11 +1591,6 @@ html[data-theme="dark"] .schedule-table tr:hover td {
 .days-left.overdue {
     background-color: rgba(244, 67, 54, 0.15);
     color: #C62828;
-}
-
-.days-left.pending {
-    background-color: rgba(var(--accent-color-rgb), 0.15);
-    color: var(--accent-color);
 }
 
 .lesson-info, .due-date-info {
