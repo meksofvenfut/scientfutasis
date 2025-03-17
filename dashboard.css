@@ -1,14 +1,14 @@
 :root, html[data-theme="light"] {
     --primary-color: #3a3a3a;
     --accent-color: #4a86e8;
-    --bg-color: #f7f7f7;
+    --bg-color: #f5f7fa;
     --card-bg: #ffffff;
-    --text-color: #333;
+    --text-color: #3a3a3a;
     --secondary-text: #666;
     --border-radius: 8px;
     --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     --transition: all 0.3s ease;
-    --border-color: #eaeaea;
+    --border-color: #e5e7eb;
     --navbar-bg: #ffffff;
     --navbar-text: #3a3a3a;
     --navbar-active: #4a86e8;
@@ -16,25 +16,29 @@
     --primary-bg: #ffffff;
     --secondary-bg: #f5f7fa;
     --primary-text: #333333;
-    --accent-color-rgb: 74, 108, 247;
+    --accent-color-rgb: 67, 97, 238;
     --hover-color: #f0f3ff;
     --shadow-color: rgba(0, 0, 0, 0.1);
     --box-shadow: 0 4px 15px var(--shadow-color);
+    --heading-color: #2d2d2d;
+    --alternate-row: #f9fafc;
 }
 
 html[data-theme="dark"] {
     --primary-color: #e0e0e0;
-    --accent-color: #4a86e8;
-    --bg-color: #1e1e1e;
+    --accent-color: #6c8fff;
+    --bg-color: #1a1a1a;
     --card-bg: #2d2d2d;
-    --text-color: #e0e0e0;
+    --text-color: #f5f5f5;
     --secondary-text: #aaa;
     --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    --border-color: #444;
+    --border-color: #444444;
     --navbar-bg: #252525;
     --navbar-text: #e0e0e0;
     --navbar-active: #4a86e8;
     --footer-bg: #252525;
+    --heading-color: #ffffff;
+    --alternate-row: #323232;
 }
 
 * {
@@ -2370,4 +2374,60 @@ html[data-theme="dark"] .schedule-table tr:hover td {
     display: flex;
     justify-content: flex-end;
     margin-bottom: 20px;
+}
+
+/* Duyuru kartlarındaki etkinlik tarihi stili */
+.announcement-card .event-date {
+    display: flex;
+    align-items: center;
+    background-color: rgba(var(--accent-color-rgb), 0.08);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-top: 15px;
+    transition: all 0.3s ease;
+    border-left: 4px solid var(--accent-color);
+}
+
+.announcement-card .event-date:hover {
+    background-color: rgba(var(--accent-color-rgb), 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+}
+
+.announcement-card .event-date svg {
+    width: 24px;
+    height: 24px;
+    margin-right: 12px;
+    color: var(--accent-color);
+    flex-shrink: 0;
+}
+
+.announcement-card .event-date strong {
+    margin-right: 6px;
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
+.announcement-card .event-date-content {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+@media (max-width: 768px) {
+    .announcement-card .event-date {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 12px;
+    }
+    
+    .announcement-card .event-date svg {
+        margin-bottom: 8px;
+    }
+    
+    .announcement-card .event-date-content {
+        margin-top: 8px;
+        width: 100%;
+    }
 } 
