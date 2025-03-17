@@ -1599,12 +1599,23 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <line x1="8" y1="2" x2="8" y2="6"></line>
                                     <line x1="3" y1="10" x2="21" y2="10"></line>
                                 </svg>
-                                <strong>Etkinlik Tarihi:</strong> ${new Date(announcement.eventDate).toLocaleDateString('tr-TR', {
-                                    day: 'numeric',
-                                    month: 'long',
-                                    year: 'numeric',
-                                    timeZone: 'Europe/Istanbul'
-                                })}
+                                <strong>Etkinlik Tarihi:</strong> ${(() => {
+                                    try {
+                                        const eventDate = new Date(announcement.eventDate);
+                                        if (isNaN(eventDate.getTime())) {
+                                            return announcement.eventDate;
+                                        }
+                                        return eventDate.toLocaleDateString('tr-TR', {
+                                            day: 'numeric',
+                                            month: 'long',
+                                            year: 'numeric',
+                                            timeZone: 'Europe/Istanbul'
+                                        });
+                                    } catch (error) {
+                                        console.error('Etkinlik tarihi dönüştürme hatası:', error);
+                                        return announcement.eventDate;
+                                    }
+                                })()}
                             </div>
                             ` : ''}
                         </div>
@@ -1643,6 +1654,26 @@ document.addEventListener('DOMContentLoaded', () => {
                                     document.getElementById('editAnnouncementId').value = currentAnnouncement.id;
                                     document.getElementById('editAnnouncementTitle').value = currentAnnouncement.title;
                                     document.getElementById('editAnnouncementContent').value = currentAnnouncement.content;
+                                    
+                                    // Etkinlik tarihini doldur (varsa)
+                                    const eventDateInput = document.getElementById('editAnnouncementEventDate');
+                                    if (eventDateInput && currentAnnouncement.eventDate) {
+                                        try {
+                                            // Tarih formatını YYYY-MM-DD formatına dönüştür (input type="date" için)
+                                            const eventDate = new Date(currentAnnouncement.eventDate);
+                                            if (!isNaN(eventDate.getTime())) {
+                                                // ISO formatından sadece tarih kısmını al (YYYY-MM-DD)
+                                                eventDateInput.value = eventDate.toISOString().split('T')[0];
+                                            } else {
+                                                eventDateInput.value = '';
+                                            }
+                                        } catch (error) {
+                                            console.error('Etkinlik tarihi dönüştürülürken hata:', error);
+                                            eventDateInput.value = '';
+                                        }
+                                    } else if (eventDateInput) {
+                                        eventDateInput.value = '';
+                                    }
                                     
                                     // Önem durumunu seç
                                     const importanceSelect = document.getElementById('editAnnouncementImportance');
@@ -1778,12 +1809,23 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <line x1="8" y1="2" x2="8" y2="6"></line>
                                 <line x1="3" y1="10" x2="21" y2="10"></line>
                             </svg>
-                            <strong>Etkinlik Tarihi:</strong> ${new Date(announcement.eventDate).toLocaleDateString('tr-TR', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric',
-                                timeZone: 'Europe/Istanbul'
-                            })}
+                            <strong>Etkinlik Tarihi:</strong> ${(() => {
+                                try {
+                                    const eventDate = new Date(announcement.eventDate);
+                                    if (isNaN(eventDate.getTime())) {
+                                        return announcement.eventDate;
+                                    }
+                                    return eventDate.toLocaleDateString('tr-TR', {
+                                        day: 'numeric',
+                                        month: 'long',
+                                        year: 'numeric',
+                                        timeZone: 'Europe/Istanbul'
+                                    });
+                                } catch (error) {
+                                    console.error('Etkinlik tarihi dönüştürme hatası:', error);
+                                    return announcement.eventDate;
+                                }
+                            })()}
                         </div>
                         ` : ''}
                     </div>
@@ -1881,6 +1923,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const title = document.getElementById('addAnnouncementTitle').value;
             const content = document.getElementById('addAnnouncementContent').value;
             const importance = document.getElementById('addAnnouncementImportance').value;
+            const eventDate = document.getElementById('addAnnouncementEventDate').value;
             
             // Formun validasyonu
             if (!title || !content) {
@@ -1898,6 +1941,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     title,
                     content,
                     importance,
+                    eventDate: eventDate || null,
                     userType: userInfo && userInfo.userType ? userInfo.userType : ""
                 })
             })
@@ -1942,6 +1986,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const title = document.getElementById('editAnnouncementTitle').value;
             const content = document.getElementById('editAnnouncementContent').value;
             const importance = document.getElementById('editAnnouncementImportance').value;
+            const eventDate = document.getElementById('editAnnouncementEventDate').value;
             
             // Formun validasyonu
             if (!announcementId || !title || !content) {
@@ -1959,6 +2004,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     title,
                     content,
                     importance,
+                    eventDate: eventDate || null,
                     userType: userInfo && userInfo.userType ? userInfo.userType : ""
                 })
             })
