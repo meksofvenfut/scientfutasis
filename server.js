@@ -2680,13 +2680,21 @@ app.get('/api/grades/download/:id', (req, res) => {
             
             console.log(`Dosya indiriliyor: ${filePath} - ${fileName}`);
             
-            // Olası dosya yollarını kontrol et
+            // Olası dosya yollarını kontrol et - daha fazla olasılık ekleyelim
+            const __dirnameFull = path.resolve(__dirname);
+            const fileBaseName = path.basename(filePath);
+            
             let possiblePaths = [
-                filePath,                                          // Orijinal yol
-                path.join(__dirname, 'uploads', path.basename(filePath)), // Uploads klasöründe
-                path.join(__dirname, path.basename(filePath)),            // Ana dizinde
-                path.join(__dirname, 'uploads', fileName),                // Sadece dosya adı ile
-                path.resolve(filePath)                                    // Mutlak yol
+                filePath,                                                       // Veritabanından gelen orijinal yol
+                path.join(__dirname, 'uploads', fileBaseName),                  // uploads klasöründe dosya adı
+                path.join(__dirname, fileBaseName),                             // Ana dizinde dosya adı 
+                path.join(__dirname, 'uploads', fileName),                      // uploads klasöründe dosya adı (file_name)
+                path.join(__dirname, fileName),                                 // Ana dizinde dosya adı (file_name)
+                path.resolve(filePath),                                         // Mutlak yol
+                path.join(__dirnameFull, 'uploads', fileBaseName),              // Tam yolda uploads
+                path.join(__dirnameFull, fileBaseName),                         // Tam yolda dosya
+                path.join(__dirnameFull, 'uploads', path.basename(fileName)),   // Tam yolda uploads ve dosya adı
+                path.join(__dirnameFull, path.basename(fileName))               // Tam yolda dosya adı
             ];
             
             console.log('Kontrol edilecek olası dosya yolları:', possiblePaths);
@@ -2694,10 +2702,13 @@ app.get('/api/grades/download/:id', (req, res) => {
             // Dosya yollarını kontrol et ve ilk bulunanı kullan
             let foundPath = null;
             for (const pathToCheck of possiblePaths) {
+                console.log(`Kontrol ediliyor: ${pathToCheck}`);
                 if (fs.existsSync(pathToCheck)) {
                     foundPath = pathToCheck;
                     console.log(`Dosya bulundu: ${foundPath}`);
                     break;
+                } else {
+                    console.log(`Dosya bulunamadı: ${pathToCheck}`);
                 }
             }
             
