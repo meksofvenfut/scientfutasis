@@ -824,9 +824,11 @@ html[data-theme="dark"] .light-icon {
     background-color: rgba(0, 0, 0, 0.7);
     z-index: 1500;
     overflow: hidden;
-    padding: 0;
     box-sizing: border-box;
-    display: flex;
+}
+
+.modal[style*="display: flex"] {
+    display: flex !important;
     align-items: center;
     justify-content: center;
 }
@@ -839,14 +841,14 @@ html[data-theme="dark"] .light-icon {
     height: 100%;
     margin: 0;
     display: none;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.7);
     z-index: 95;
+    background-color: rgba(0, 0, 0, 0.7);
 }
 
 .main-content .modal[style*="display: flex"] {
     display: flex !important;
+    align-items: center;
+    justify-content: center;
 }
 
 @keyframes fadeIn {
@@ -861,11 +863,12 @@ html[data-theme="dark"] .light-icon {
     box-shadow: var(--box-shadow);
     width: 90%;
     max-width: 1000px;
-    height: 75vh;
-    max-height: 75vh;
-    margin: 0 auto;
+    height: auto;
+    max-height: 80vh;
+    margin: auto;
     display: flex;
     flex-direction: column;
+    animation: fadeIn 0.3s ease-in-out;
 }
 
 .modal-header {
