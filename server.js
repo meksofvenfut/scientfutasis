@@ -403,12 +403,14 @@ db.serialize(() => {
                 title TEXT NOT NULL,
                 lesson TEXT NOT NULL,
                 type TEXT NOT NULL,
+                "examDate" TEXT NOT NULL,
                 file_path TEXT,
                 file_name TEXT,
                 file_size INTEGER,
-                examDate TEXT NOT NULL,
-                createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                file_data TEXT,  -- Base64 formatında dosya içeriği
+                file_type TEXT,  -- Dosya MIME tipi
+                "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `;
     } else {
@@ -1670,13 +1672,14 @@ app.get('/api/init', (req, res) => {
                         title TEXT NOT NULL,
                         lesson TEXT NOT NULL,
                         type TEXT NOT NULL,
+                        "examDate" TEXT NOT NULL,
                         file_path TEXT,
                         file_name TEXT,
                         file_size INTEGER,
-                        "examDate" TEXT NOT NULL,
+                        file_data TEXT,  -- Base64 formatında dosya içeriği
+                        file_type TEXT,  -- Dosya MIME tipi
                         "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE (title, lesson)
+                        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 `, [], err => {
                     if (err) console.error('Grades tablosu oluşturulamadı:', err.message);
@@ -2466,7 +2469,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         const userType = req.body.userType;
         if (!userType || userType.toLowerCase() !== 'admin') {
             console.error('Yetkisiz kullanıcı sınav notu ekleme girişimi:', userType);
-        return res.status(403).json({ 
+            return res.status(403).json({ 
                 success: false, 
                 message: 'Bu işlem için yönetici yetkisi gereklidir' 
             });
@@ -2479,7 +2482,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         const examDate = req.body.examDate;
         
         // Girilen verileri kontrol et
-    if (!title || !lesson || !type || !examDate) {
+        if (!title || !lesson || !type || !examDate) {
             console.error('Eksik bilgi ile sınav notu ekleme girişimi');
             return res.status(400).json({ 
                 success: false, 
@@ -2503,32 +2506,26 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         let filePath = '';
         let fileName = '';
         let fileSize = 0;
+        let fileData = null;
+        let fileType = '';
         
         if (file) {
-            // Render.com üzerinde çalışıyorsa, mutlak dosya yollarını kullan
-            const isRunningOnRender = fs.existsSync('/opt/render/project/src');
-            const renderBasePath = '/opt/render/project/src';
-            
-            // Dosya adı ve yolunu belirle
-            fileName = file.filename; // Filename handler tarafından oluşturuldu
-            
-            if (isRunningOnRender) {
-                // Render.com üzerinde tam yol kullan
-                filePath = path.join(renderBasePath, 'uploads', fileName);
-            } else {
-                // Yerel geliştirme ortamında normal yol kullan
-                filePath = file.path;
-            }
-            
+            // Dosya bilgilerini al
+            fileName = file.originalname;
             fileSize = file.size;
+            fileType = file.mimetype;
             
-            // Dosya bilgilerini logla
+            // Dosyayı base64'e çevir
+            fileData = fs.readFileSync(file.path).toString('base64');
+            
+            // Geçici dosyayı sil
+            fs.unlinkSync(file.path);
+            
             console.log('Dosya bilgileri:', {
-                path: filePath,
                 name: fileName,
-                originalName: file.originalname,
                 size: fileSize,
-                isOnRender: isRunningOnRender
+                type: fileType,
+                dataLength: fileData.length
             });
         }
         
@@ -2536,21 +2533,21 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         
         if (isPg) {
             query = `
-                INSERT INTO grades (title, lesson, type, "examDate", file_path, file_name, file_size, "createdAt", "updatedAt")
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                INSERT INTO grades (title, lesson, type, "examDate", file_path, file_name, file_size, file_data, file_type, "createdAt", "updatedAt")
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 RETURNING id
             `;
-            params = [title, lesson, type, examDate, filePath, fileName, fileSize, now, now];
+            params = [title, lesson, type, examDate, filePath, fileName, fileSize, fileData, fileType, now, now];
         } else {
             query = `
-                INSERT INTO grades (title, lesson, type, examDate, file_path, file_name, file_size, createdAt, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                INSERT INTO grades (title, lesson, type, examDate, file_path, file_name, file_size, file_data, file_type, createdAt, updatedAt)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             `;
-            params = [title, lesson, type, examDate, filePath, fileName, fileSize];
+            params = [title, lesson, type, examDate, filePath, fileName, fileSize, fileData, fileType];
         }
         
         db.run(query, params, function(err) {
-        if (err) {
+            if (err) {
                 console.error('Sınav notu eklenirken hata:', err.message);
                 return res.status(500).json({ 
                     success: false, 
@@ -2559,22 +2556,19 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
                 });
             }
             
-            console.log(`Yeni sınav notu eklendi: ${title} - ID: ${this.lastID || 'unknown'}`);
-        res.json({ 
-            success: true, 
-                message: 'Sınav notu başarıyla eklendi', 
-                id: this.lastID,
-                title: title,
-                lesson: lesson,
-                type: type,
-                examDate: examDate
+            console.log(`Yeni sınav notu eklendi - ID: ${this.lastID || 0}`);
+            
+            return res.json({ 
+                success: true, 
+                message: 'Sınav notu başarıyla eklendi',
+                id: this.lastID || 0
+            });
         });
-    });
     } catch (error) {
         console.error('Sınav notu ekleme hatası:', error);
-        res.status(500).json({ 
+        return res.status(500).json({ 
             success: false, 
-            message: 'Sınav notu eklenirken bir hata oluştu', 
+            message: 'Sunucu hatası', 
             error: error.message 
         });
     }
@@ -2642,33 +2636,35 @@ app.put('/api/grades/update/:id', upload.single('file'), (req, res) => {
             query = `
                 UPDATE grades 
                     SET title = $1, lesson = $2, type = $3, "examDate" = $4, "updatedAt" = $5, 
-                        file_path = $6, file_name = $7, file_size = $8
-                    WHERE id = $9
+                        file_path = $6, file_name = $7, file_size = $8, file_data = $9, file_type = $10
+                    WHERE id = $11
                     RETURNING id
                 `;
-                params = [title, lesson, type, examDate, now, filePath, fileName, fileSize, gradeId];
+                params = [title, lesson, type, examDate, now, filePath, fileName, fileSize, fileData, fileType, gradeId];
             } else {
                 query = `
                     UPDATE grades 
                     SET title = ?, lesson = ?, type = ?, examDate = ?, updatedAt = CURRENT_TIMESTAMP,
-                        file_path = ?, file_name = ?, file_size = ?
+                        file_path = ?, file_name = ?, file_size = ?, file_data = ?, file_type = ?
                 WHERE id = ?
             `;
-                params = [title, lesson, type, examDate, filePath, fileName, fileSize, gradeId];
+                params = [title, lesson, type, examDate, filePath, fileName, fileSize, fileData, fileType, gradeId];
             }
         } else {
             // Dosya değişmiyorsa sadece diğer bilgileri güncelle
             if (isPg) {
             query = `
                 UPDATE grades 
-                    SET title = $1, lesson = $2, type = $3, "examDate" = $4, "updatedAt" = $5
-                    WHERE id = $6
+                    SET title = $1, lesson = $2, type = $3, "examDate" = $4, "updatedAt" = $5, 
+                        file_path = $6, file_name = $7, file_size = $8, file_data = $9, file_type = $10
+                    WHERE id = $11
                     RETURNING id
                 `;
-                params = [title, lesson, type, examDate, now, gradeId];
+                params = [title, lesson, type, examDate, now, gradeId, fileSize, fileData, fileType];
         } else {
             query = `
                 UPDATE grades 
+                    SET title = ?, lesson = ?, type = ?, examDate = ?, updatedAt = CURRENT_TIMESTAMP,
                     SET title = ?, lesson = ?, type = ?, examDate = ?, updatedAt = CURRENT_TIMESTAMP
                 WHERE id = ?
             `;
@@ -2782,278 +2778,62 @@ app.delete('/api/grades/delete/:id', (req, res) => {
 // 5. Sınav notu dosyasını indir
 app.get('/api/grades/download/:id', (req, res) => {
     try {
-        const gradeId = req.params.id;
-        console.log('Sınav notu dosyası indirme isteği alındı:', gradeId);
+        const id = req.params.id;
+        console.log('Sınav notu indirme isteği:', id);
         
-        if (!gradeId) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Dosya ID\'si gereklidir' 
-            });
-        }
-        
-        // Dosya bilgilerini getir
-        let query, params;
-        
+        let query;
         if (isPg) {
-            query = `SELECT file_path, file_name FROM grades WHERE id = $1`;
-            params = [gradeId];
+            query = 'SELECT file_name, file_type, file_data FROM grades WHERE id = $1';
         } else {
-            query = `SELECT file_path, file_name FROM grades WHERE id = ?`;
-            params = [gradeId];
+            query = 'SELECT file_name, file_type, file_data FROM grades WHERE id = ?';
         }
         
-        db.get(query, params, (err, row) => {
+        db.get(query, [id], (err, row) => {
             if (err) {
-                console.error('Dosya bilgileri alınırken hata:', err.message);
-                return res.status(500).json({ 
-                    success: false, 
-                    message: 'Veritabanı hatası', 
-                    error: err.message 
+                console.error('Dosya bilgileri alınırken hata:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Dosya bilgileri alınırken bir hata oluştu',
+                    error: err.message
                 });
             }
             
-            if (!row || !row.file_path) {
-                console.log(`${gradeId} ID'li sınav notuna ait dosya bilgisi bulunamadı`);
-                return res.status(404).json({ 
-                    success: false, 
-                    message: 'Dosya bulunamadı' 
+            if (!row || !row.file_data) {
+                console.error('Dosya bulunamadı:', id);
+                return res.status(404).json({
+                    success: false,
+                    message: 'Dosya bulunamadı'
                 });
             }
             
-            // Dosya bilgilerini logla
-            console.log('Veritabanından alınan dosya bilgileri:', row);
-            
-            // Dosya yolu ve adını al
-            const filePath = row.file_path;
-            const fileName = row.file_name;
-            
-            // Dosya adından timestamp ve random kısmını ayır
-            const fileNameParts = fileName ? fileName.split('_') : [];
-            const actualFileName = fileNameParts.length >= 3 
-                ? fileNameParts.slice(2).join('_')  // İlk iki kısmı (timestamp ve random) atla
-                : fileName; // Eski format dosya adı
-            
-            console.log(`Dosya indiriliyor: ${filePath}`);
-            console.log(`Orijinal dosya adı: ${fileName}, İndirilecek dosya adı: ${actualFileName || fileName}`);
-            
-            // Dosya yolunun varlığını kontrol et
-            if (fs.existsSync(filePath)) {
-                console.log(`Dosya bulundu: ${filePath}`);
+            try {
+                // Base64'ten dosyayı çöz
+                const fileBuffer = Buffer.from(row.file_data, 'base64');
+                
+                // Dosya bilgilerini ayarla
+                res.setHeader('Content-Type', row.file_type);
+                res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(row.file_name)}"`);
+                res.setHeader('Content-Length', fileBuffer.length);
                 
                 // Dosyayı gönder
-                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(actualFileName || fileName)}`);
-                res.setHeader('Content-Type', 'application/octet-stream');
+                res.send(fileBuffer);
                 
-                const fileStream = fs.createReadStream(filePath);
-                fileStream.pipe(res);
-                
-                fileStream.on('error', (error) => {
-                    console.error('Dosya okuma hatası:', error);
-                    if (!res.headersSent) {
-                        res.status(500).json({ 
-                            success: false, 
-                            message: 'Dosya okuma hatası', 
-                            error: error.message 
-                        });
-                    }
+                console.log('Dosya başarıyla gönderildi:', row.file_name);
+            } catch (error) {
+                console.error('Dosya gönderilirken hata:', error);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Dosya gönderilirken bir hata oluştu',
+                    error: error.message
                 });
-            } else {
-                console.log(`Dosya bulunamadı: ${filePath}`);
-                
-                // Çalışma ortamını belirle
-                const renderBasePath = '/opt/render/project/src';
-                const isRunningOnRender = fs.existsSync(renderBasePath);
-                
-                // Uploads dizinini belirle
-                const uploadDir = isRunningOnRender 
-                    ? path.join(renderBasePath, 'uploads') 
-                    : path.join(__dirname, 'uploads');
-                
-                // Olası dosya bilgilerini çıkar
-                const fileExt = path.extname(fileName || '');
-                const fileBaseName = path.basename(fileName || '', fileExt);
-                const filePathBaseName = path.basename(filePath || '');
-                
-                // Dosya adı kısımlarını hazırla
-                const possibleFileNameParts = [
-                    fileName,                                    // Tam dosya adı (veritabanındaki)
-                    fileBaseName + fileExt,                      // Sadece dosya adı (uzantıyla)
-                    filePathBaseName,                            // Dosya yolundan çıkarılan dosya adı
-                    actualFileName,                              // Timestamp/random olmadan dosya adı
-                    path.basename(actualFileName || fileName || '')    // Son çare olarak basename
-                ];
-                
-                // Olası klasör dizinlerini hazırla
-                const possibleDirs = [
-                    path.dirname(filePath || ''),                      // Orijinal dosya yolundaki dizin
-                    uploadDir,                                   // Uploads klasörü
-                    __dirname,                                   // Ana dizin
-                    path.resolve(__dirname),                     // Tam yollu ana dizin
-                ];
-                
-                // Render.com için ek dizinler
-                if (isRunningOnRender) {
-                    possibleDirs.push(
-                        renderBasePath,                          // Render ana dizini
-                        path.join(renderBasePath, 'uploads')     // Render uploads klasörü
-                    );
-                }
-                
-                console.log('Olası dosya adı parçaları:', possibleFileNameParts);
-                console.log('Olası dizinler:', possibleDirs);
-                
-                // Tüm olası kombinasyonları oluştur
-                let possibleFilePaths = [];
-                
-                for (const dir of possibleDirs) {
-                    for (const name of possibleFileNameParts) {
-                        if (!name) continue; // Boş isim varsa atla
-                        possibleFilePaths.push(path.join(dir, name));
-                    }
-                }
-                
-                // Özel durumlar ekle
-                possibleFilePaths.push(
-                    filePath,                                   // Orijinal dosya yolu
-                    path.resolve(filePath || '')                      // Tam yollu orijinal dosya yolu
-                );
-                
-                console.log('Aranacak tüm olası dosya yolları:', possibleFilePaths);
-                
-                // Eğer upload dizini varsa tüm dosyaları kontrol et ve benzer isimleri bul
-                if (fs.existsSync(uploadDir)) {
-                    try {
-                        const files = fs.readdirSync(uploadDir);
-                        console.log(`${uploadDir} içindeki dosyalar:`, files);
-                        
-                        // Timestamp_random_ formatındaki dosyaları bul ve gerçek isimlerini kontrol et
-                        const timestamp_pattern = /^\d+_[a-z0-9]+_/i;
-                        
-                        for (const file of files) {
-                            // Dosya uzantısı aynı mı kontrol et
-                            if (path.extname(file) === fileExt) {
-                                // Timestamp ve random kısmı var mı?
-                                if (timestamp_pattern.test(file)) {
-                                    // Gerçek dosya adını çıkar
-                                    const realName = file.replace(timestamp_pattern, '');
-                                    // Olası eşleşmeler için kontrol et
-                                    if (
-                                        realName === fileBaseName + fileExt ||
-                                        realName === path.basename(actualFileName || '') ||
-                                        realName === filePathBaseName ||
-                                        realName.toLowerCase() === fileBaseName.toLowerCase() + fileExt
-                                    ) {
-                                        // Eşleşen dosya yolunu ekle
-                                        const matchedPath = path.join(uploadDir, file);
-                                        console.log(`Eşleşen dosya bulundu: ${matchedPath}`);
-                                        // Eğer bu dosya mevcut ve bu yol listede yoksa ekle
-                                        if (fs.existsSync(matchedPath) && !possibleFilePaths.includes(matchedPath)) {
-                                            possibleFilePaths.unshift(matchedPath); // Başa ekle (daha yüksek öncelik)
-                                        }
-                                    }
-                                } else {
-                                    // Direkt olarak dosya adını kontrol et
-                                    for (const namePart of possibleFileNameParts) {
-                                        if (file === namePart || 
-                                            file.toLowerCase() === namePart.toLowerCase()) {
-                                            const matchedPath = path.join(uploadDir, file);
-                                            console.log(`Direkt eşleşen dosya: ${matchedPath}`);
-                                            // Eğer bu dosya mevcut ve bu yol listede yoksa ekle
-                                            if (fs.existsSync(matchedPath) && !possibleFilePaths.includes(matchedPath)) {
-                                                possibleFilePaths.unshift(matchedPath); // Başa ekle (daha yüksek öncelik)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (readDirError) {
-                        console.error('Klasör okuma hatası:', readDirError);
-                    }
-                }
-                
-                // Dosya yollarını kontrol et ve ilk bulunanı kullan
-                let foundPath = null;
-                const checkedPaths = [];
-                
-                for (const pathToCheck of possibleFilePaths) {
-                    try {
-                        console.log(`Kontrol ediliyor: ${pathToCheck}`);
-                        checkedPaths.push(pathToCheck);
-                        
-                        // Dosya varlığını kontrol et
-                        if (fs.existsSync(pathToCheck)) {
-                            foundPath = pathToCheck;
-                            console.log(`Dosya bulundu: ${foundPath}`);
-                            break;
-                        } else {
-                            console.log(`Dosya bulunamadı: ${pathToCheck}`);
-                        }
-                    } catch (checkError) {
-                        console.error(`Dosya kontrol hatası (${pathToCheck}):`, checkError);
-                    }
-                }
-                
-                if (foundPath) {
-                    // İndirme işlemini başlat
-                    try {
-                        // Dosyayı gönder
-                        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(actualFileName || fileName)}`);
-                        res.setHeader('Content-Type', 'application/octet-stream');
-                        
-                        const fileStream = fs.createReadStream(foundPath);
-                        fileStream.pipe(res);
-                        
-                        fileStream.on('error', (error) => {
-                            console.error('Dosya okuma hatası:', error);
-                            if (!res.headersSent) {
-                                res.status(500).json({ 
-                                    success: false, 
-                                    message: 'Dosya okuma hatası', 
-                                    error: error.message 
-                                });
-                            }
-                        });
-                    } catch (streamError) {
-                        console.error('Dosya akışı başlatma hatası:', streamError);
-                        return res.status(500).json({ 
-                            success: false, 
-                            message: 'Dosya akışı başlatılamadı', 
-                            error: streamError.message 
-                        });
-                    }
-                } else {
-                    console.error(`Dosya hiçbir yerde bulunamadı!`);
-                    
-                    // Uploads klasörünün mevcut durumunu kontrol et
-                    let uploadDirInfo = '';
-                    try {
-                        if (fs.existsSync(uploadDir)) {
-                            const files = fs.readdirSync(uploadDir);
-                            uploadDirInfo = `${uploadDir} klasörü mevcut, içerisinde ${files.length} dosya var: ${files.join(', ')}`;
-                        } else {
-                            uploadDirInfo = `${uploadDir} klasörü bulunamadı`;
-                        }
-                    } catch (dirCheckError) {
-                        uploadDirInfo = `Klasör kontrolü sırasında hata: ${dirCheckError.message}`;
-                    }
-                    
-                    return res.status(404).json({ 
-                        success: false, 
-                        message: 'Dosya fiziksel olarak bulunamadı',
-                        checkedPaths: checkedPaths,
-                        uploadDirInfo: uploadDirInfo
-                    });
-                }
             }
         });
     } catch (error) {
         console.error('Dosya indirme hatası:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Sunucu hatası', 
-            error: error.message 
+        return res.status(500).json({
+            success: false,
+            message: 'Sunucu hatası',
+            error: error.message
         });
     }
 });
