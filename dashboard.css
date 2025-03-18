@@ -824,9 +824,11 @@ html[data-theme="dark"] .light-icon {
     background-color: rgba(0, 0, 0, 0.7);
     z-index: 1500;
     overflow: hidden;
-    animation: fadeIn 0.3s ease;
-    padding: 60px 0;
+    padding: 70px 0;
     box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .main-content .modal {
@@ -859,8 +861,8 @@ html[data-theme="dark"] .light-icon {
     box-shadow: var(--box-shadow);
     width: 90%;
     max-width: 1000px;
-    height: calc(100vh - 140px);
-    max-height: calc(100vh - 140px);
+    height: 75vh;
+    max-height: 75vh;
     margin: 0 auto;
     display: flex;
     flex-direction: column;

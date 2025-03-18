@@ -5,6 +5,46 @@ document.addEventListener('DOMContentLoaded', () => {
     // Yenileme butonlarını ekle
     addRefreshButtonsToModals();
     
+    // Arka planda verileri yükle (performans iyileştirmesi)
+    setTimeout(() => {
+        console.log('Arka planda veriler yükleniyor...');
+        // Sınav notlarını arka planda yükle
+        if (!cachedGrades) {
+            fetch('/api/grades/get')
+                .then(response => response.json())
+                .then(data => {
+                    grades = data;
+                    cachedGrades = data;
+                    gradesCacheTimestamp = new Date().getTime();
+                    console.log('Sınav notları arka planda yüklendi');
+                })
+                .catch(error => {
+                    console.error('Sınav notları arka planda yüklenirken hata:', error);
+                });
+        }
+        
+        // Kullanıcıları arka planda yükle
+        if (isAdmin && !cachedUsers) {
+            fetchWithTokenCheck('/api/users')
+                .then(response => response.json())
+                .then(data => {
+                    // Veri formatını kontrol et
+                    if (Array.isArray(data)) {
+                        cachedUsers = data;
+                        usersCacheTimestamp = new Date().getTime();
+                        console.log('Kullanıcılar arka planda yüklendi');
+                    } else if (data.users && Array.isArray(data.users)) {
+                        cachedUsers = data.users;
+                        usersCacheTimestamp = new Date().getTime();
+                        console.log('Kullanıcılar arka planda yüklendi');
+                    }
+                })
+                .catch(error => {
+                    console.error('Kullanıcılar arka planda yüklenirken hata:', error);
+                });
+        }
+    }, 1000);
+    
     // Service worker'ı unregister etmek için
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(registrations) {
