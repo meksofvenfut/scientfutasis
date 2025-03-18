@@ -898,18 +898,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Sayfayı kaydıralım, görüntünün bozulmaması için
         window.scrollTo(0, 0);
         
-        // Modal görünürlüğünü ayarla
+        // Modal'ın stillerini tamamen temizle (inline stillerini kaldır)
+        modalElement.removeAttribute('style');
+        
+        // Modal'ı göster - !important yerine doğrudan DOM özelliğini kullan
         modalElement.style.display = 'flex';
         modalElement.style.visibility = 'visible';
         modalElement.style.opacity = '1';
-        modalElement.setAttribute('aria-hidden', 'false');
-        
-        // Modal içeriğini görünür yap
-        const content = modalElement.querySelector('.modal-content');
-        if (content) {
-            content.style.opacity = '1';
-            content.style.transform = 'scale(1)';
-        }
         
         // Body scroll'u kapat
         document.body.style.overflow = 'hidden';
@@ -924,6 +919,27 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Tüm kapatma butonlarını ayarla
         setupModalClosers(modalElement);
+        
+        // Modal'a göre veri yükleme - Önbellekten yükle
+        if (modalElement === homeworkModal) {
+            fetchHomeworks();
+        } else if (modalElement === gradesModal) {
+            if (isDataCached(cachedGrades, gradesCacheTimestamp)) {
+                console.log('Önbellekten sınav notları yükleniyor...');
+                displayGrades();
+            } else {
+                console.log('API\'den sınav notları yükleniyor...');
+                fetchGrades();
+            }
+        } else if (modalElement === userManagementModal) {
+            if (isDataCached(cachedUsers, usersCacheTimestamp)) {
+                console.log('Önbellekten kullanıcılar yükleniyor...');
+                displayUsers(cachedUsers);
+            } else {
+                console.log('API\'den kullanıcılar yükleniyor...');
+                fetchUsers();
+            }
+        }
     }
 
     function closeModal(modalElement) {
@@ -933,18 +949,31 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        // Değişiklikler yapıldıysa ve ders programıysa kaydet
+        if (hasChanges && modalElement === scheduleModal) {
+            saveSchedule();
+        }
+        
+        // Ödev formunu gizle ve sıfırla
+        if (modalElement === homeworkModal) {
+            const homeworkForm = document.getElementById('homeworkForm');
+            if (homeworkForm) {
+                homeworkForm.style.display = 'none';
+            }
+            resetHomeworkForm();
+        }
+        
         console.log('Modal kapatılıyor: ', modalElement.id);
         
-        // Modal'ı kapat
+        // Modal'ı kapat - doğrudan DOM özelliklerini kullan
         modalElement.style.display = 'none';
         modalElement.style.visibility = 'hidden';
         modalElement.style.opacity = '0';
-        modalElement.setAttribute('aria-hidden', 'true');
         
-        // Body scroll'u aç
+        // Body scroll'u geri aç
         document.body.style.overflow = '';
         
-        // İkon görsel efektlerini kaldır
+        // Modal kapatıldığında alt blok ikonlarındaki active efektini kaldır
         const iconItems = document.querySelectorAll('.icon-item');
         if (iconItems && iconItems.length > 0) {
             iconItems.forEach(item => {
