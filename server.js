@@ -3263,6 +3263,29 @@ setInterval(() => {
 // Sunucuyu başlat
 const server = app.listen(PORT, () => {
     console.log(`Server ${PORT} portunda başlatıldı: http://localhost:${PORT}`);
+    
+    // PostgreSQL için tabloları güncelle
+    if (isPg) {
+        // Grades tablosuna eksik sütunları ekle
+        const alterGradesTableQueries = [
+            `ALTER TABLE grades ADD COLUMN IF NOT EXISTS file_data TEXT`,
+            `ALTER TABLE grades ADD COLUMN IF NOT EXISTS file_type TEXT`,
+            `ALTER TABLE grades ADD COLUMN IF NOT EXISTS file_size INTEGER`
+        ];
+        
+        alterGradesTableQueries.forEach(query => {
+            db.query(query)
+                .then(() => {
+                    console.log('Tablo güncellendi:', query);
+                })
+                .catch(err => {
+                    // Eğer sütun zaten varsa hata verme
+                    if (!err.message.includes('already exists')) {
+                        console.error('Tablo güncelleme hatası:', err);
+                    }
+                });
+        });
+    }
 });
 
 // Graceful shutdown
