@@ -2861,63 +2861,189 @@ app.get('/api/grades/download/:id', (req, res) => {
             } else {
                 console.log(`Dosya bulunamadı: ${filePath}`);
                 
-                // Olası dosya yollarını kontrol et
-                const __dirnameFull = path.resolve(__dirname);
-                const fileBaseName = path.basename(filePath);
-                
-                // Render.com için özel yollar
+                // Çalışma ortamını belirle
                 const renderBasePath = '/opt/render/project/src';
                 const isRunningOnRender = fs.existsSync(renderBasePath);
                 
-                // Bunlar çalışma ortamına göre dosya yolları
-                let currentUploadDir = isRunningOnRender 
+                // Uploads dizinini belirle
+                const uploadDir = isRunningOnRender 
                     ? path.join(renderBasePath, 'uploads') 
                     : path.join(__dirname, 'uploads');
                 
-                console.error(`Dosya hiçbir yerde bulunamadı!`);
-                console.error(`Kontrol edilen yollar:`, possiblePaths);
+                // Olası dosya bilgilerini çıkar
+                const fileExt = path.extname(fileName || '');
+                const fileBaseName = path.basename(fileName || '', fileExt);
+                const filePathBaseName = path.basename(filePath || '');
                 
-                // Yükleme sırasında oluşturulan uploads klasörünü kontrol et
-                try {
-                    let uploadDirResult = "";
-                    if (isRunningOnRender) {
-                        uploadDirResult = "Render.com'da uploads klasörü kontrolü: \n";
-                        if (fs.existsSync('/opt/render/project/src/uploads')) {
-                            uploadDirResult += "- /opt/render/project/src/uploads klasörü mevcut\n";
-                            // Klasörün içeriğini kontrol et
-                            const files = fs.readdirSync('/opt/render/project/src/uploads');
-                            uploadDirResult += `- İçindeki dosyalar (${files.length}): ${files.join(', ')}\n`;
-                        } else {
-                            uploadDirResult += "- /opt/render/project/src/uploads klasörü bulunamadı\n";
+                // Dosya adı kısımlarını hazırla
+                const possibleFileNameParts = [
+                    fileName,                                    // Tam dosya adı (veritabanındaki)
+                    fileBaseName + fileExt,                      // Sadece dosya adı (uzantıyla)
+                    filePathBaseName,                            // Dosya yolundan çıkarılan dosya adı
+                    actualFileName,                              // Timestamp/random olmadan dosya adı
+                    path.basename(actualFileName || fileName || '')    // Son çare olarak basename
+                ];
+                
+                // Olası klasör dizinlerini hazırla
+                const possibleDirs = [
+                    path.dirname(filePath || ''),                      // Orijinal dosya yolundaki dizin
+                    uploadDir,                                   // Uploads klasörü
+                    __dirname,                                   // Ana dizin
+                    path.resolve(__dirname),                     // Tam yollu ana dizin
+                ];
+                
+                // Render.com için ek dizinler
+                if (isRunningOnRender) {
+                    possibleDirs.push(
+                        renderBasePath,                          // Render ana dizini
+                        path.join(renderBasePath, 'uploads')     // Render uploads klasörü
+                    );
                 }
-            } else {
-                        uploadDirResult = "Lokal ortamda uploads klasörü kontrolü: \n";
-                        if (fs.existsSync(path.join(__dirname, 'uploads'))) {
-                            uploadDirResult += "- ./uploads klasörü mevcut\n";
-                            // Klasörün içeriğini kontrol et
-                            const files = fs.readdirSync(path.join(__dirname, 'uploads'));
-                            uploadDirResult += `- İçindeki dosyalar (${files.length}): ${files.join(', ')}\n`;
-                        } else {
-                            uploadDirResult += "- ./uploads klasörü bulunamadı\n";
+                
+                console.log('Olası dosya adı parçaları:', possibleFileNameParts);
+                console.log('Olası dizinler:', possibleDirs);
+                
+                // Tüm olası kombinasyonları oluştur
+                let possibleFilePaths = [];
+                
+                for (const dir of possibleDirs) {
+                    for (const name of possibleFileNameParts) {
+                        if (!name) continue; // Boş isim varsa atla
+                        possibleFilePaths.push(path.join(dir, name));
+                    }
+                }
+                
+                // Özel durumlar ekle
+                possibleFilePaths.push(
+                    filePath,                                   // Orijinal dosya yolu
+                    path.resolve(filePath || '')                      // Tam yollu orijinal dosya yolu
+                );
+                
+                console.log('Aranacak tüm olası dosya yolları:', possibleFilePaths);
+                
+                // Eğer upload dizini varsa tüm dosyaları kontrol et ve benzer isimleri bul
+                if (fs.existsSync(uploadDir)) {
+                    try {
+                        const files = fs.readdirSync(uploadDir);
+                        console.log(`${uploadDir} içindeki dosyalar:`, files);
+                        
+                        // Timestamp_random_ formatındaki dosyaları bul ve gerçek isimlerini kontrol et
+                        const timestamp_pattern = /^\d+_[a-z0-9]+_/i;
+                        
+                        for (const file of files) {
+                            // Dosya uzantısı aynı mı kontrol et
+                            if (path.extname(file) === fileExt) {
+                                // Timestamp ve random kısmı var mı?
+                                if (timestamp_pattern.test(file)) {
+                                    // Gerçek dosya adını çıkar
+                                    const realName = file.replace(timestamp_pattern, '');
+                                    // Olası eşleşmeler için kontrol et
+                                    if (
+                                        realName === fileBaseName + fileExt ||
+                                        realName === path.basename(actualFileName || '') ||
+                                        realName === filePathBaseName ||
+                                        realName.toLowerCase() === fileBaseName.toLowerCase() + fileExt
+                                    ) {
+                                        // Eşleşen dosya yolunu ekle
+                                        const matchedPath = path.join(uploadDir, file);
+                                        console.log(`Eşleşen dosya bulundu: ${matchedPath}`);
+                                        // Eğer bu dosya mevcut ve bu yol listede yoksa ekle
+                                        if (fs.existsSync(matchedPath) && !possibleFilePaths.includes(matchedPath)) {
+                                            possibleFilePaths.unshift(matchedPath); // Başa ekle (daha yüksek öncelik)
+                                        }
+                                    }
+                                } else {
+                                    // Direkt olarak dosya adını kontrol et
+                                    for (const namePart of possibleFileNameParts) {
+                                        if (file === namePart || 
+                                            file.toLowerCase() === namePart.toLowerCase()) {
+                                            const matchedPath = path.join(uploadDir, file);
+                                            console.log(`Direkt eşleşen dosya: ${matchedPath}`);
+                                            // Eğer bu dosya mevcut ve bu yol listede yoksa ekle
+                                            if (fs.existsSync(matchedPath) && !possibleFilePaths.includes(matchedPath)) {
+                                                possibleFilePaths.unshift(matchedPath); // Başa ekle (daha yüksek öncelik)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
+                    } catch (readDirError) {
+                        console.error('Klasör okuma hatası:', readDirError);
+                    }
+                }
+                
+                // Dosya yollarını kontrol et ve ilk bulunanı kullan
+                let foundPath = null;
+                const checkedPaths = [];
+                
+                for (const pathToCheck of possibleFilePaths) {
+                    try {
+                        console.log(`Kontrol ediliyor: ${pathToCheck}`);
+                        checkedPaths.push(pathToCheck);
+                        
+                        // Dosya varlığını kontrol et
+                        if (fs.existsSync(pathToCheck)) {
+                            foundPath = pathToCheck;
+                            console.log(`Dosya bulundu: ${foundPath}`);
+                            break;
+                        } else {
+                            console.log(`Dosya bulunamadı: ${pathToCheck}`);
+                        }
+                    } catch (checkError) {
+                        console.error(`Dosya kontrol hatası (${pathToCheck}):`, checkError);
+                    }
+                }
+                
+                if (foundPath) {
+                    // İndirme işlemini başlat
+                    try {
+                        // Dosyayı gönder
+                        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(actualFileName || fileName)}`);
+                        res.setHeader('Content-Type', 'application/octet-stream');
+                        
+                        const fileStream = fs.createReadStream(foundPath);
+                        fileStream.pipe(res);
+                        
+                        fileStream.on('error', (error) => {
+                            console.error('Dosya okuma hatası:', error);
+                            if (!res.headersSent) {
+                                res.status(500).json({ 
+                                    success: false, 
+                                    message: 'Dosya okuma hatası', 
+                                    error: error.message 
+                                });
+                            }
+                        });
+                    } catch (streamError) {
+                        console.error('Dosya akışı başlatma hatası:', streamError);
+                        return res.status(500).json({ 
+                            success: false, 
+                            message: 'Dosya akışı başlatılamadı', 
+                            error: streamError.message 
+                        });
+                    }
+                } else {
+                    console.error(`Dosya hiçbir yerde bulunamadı!`);
+                    
+                    // Uploads klasörünün mevcut durumunu kontrol et
+                    let uploadDirInfo = '';
+                    try {
+                        if (fs.existsSync(uploadDir)) {
+                            const files = fs.readdirSync(uploadDir);
+                            uploadDirInfo = `${uploadDir} klasörü mevcut, içerisinde ${files.length} dosya var: ${files.join(', ')}`;
+                        } else {
+                            uploadDirInfo = `${uploadDir} klasörü bulunamadı`;
+                        }
+                    } catch (dirCheckError) {
+                        uploadDirInfo = `Klasör kontrolü sırasında hata: ${dirCheckError.message}`;
                     }
                     
-                    console.log(uploadDirResult);
-                    
-                    // Klasör içeriğini hata mesajına ekle
-                    return res.status(404).json({ 
-                            success: false, 
-                        message: 'Dosya fiziksel olarak bulunamadı',
-                        checkedPaths: possiblePaths,
-                        uploadDirInfo: uploadDirResult
-                    });
-                } catch (dirError) {
-                    console.error("Klasör kontrolü sırasında hata:", dirError);
                     return res.status(404).json({ 
                         success: false, 
                         message: 'Dosya fiziksel olarak bulunamadı',
-                        checkedPaths: possiblePaths,
-                        dirError: dirError.message
+                        checkedPaths: checkedPaths,
+                        uploadDirInfo: uploadDirInfo
                     });
                 }
             }
