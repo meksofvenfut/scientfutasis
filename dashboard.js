@@ -1,3 +1,89 @@
+// Performans iyileştirmeleri için fetch önbellek süresi
+const CACHE_DURATION = 5 * 60 * 1000; // 5 dakika (milisaniye cinsinden)
+// Paralel veri yükleme için Promise.all kullanımı
+
+// Optimize edilmiş veri yükleme işlevi
+function loadResourcesFaster() {
+    console.log('Kaynaklar hızlı bir şekilde yükleniyor...');
+    
+    // Tüm gerekli verileri paralel olarak yükle
+    Promise.all([
+        // Ders programı verilerini yükle
+        new Promise(resolve => {
+            console.log('Ders programı verileri yükleniyor...');
+            initializeScheduleData();
+            loadDataFromTable();
+            resolve();
+        }),
+        
+        // Sınav notlarını yükle
+        new Promise(resolve => {
+            console.log('Sınav notları yükleniyor...');
+            fetch('/api/grades/get?meta_only=true')
+                .then(response => response.json())
+                .then(data => {
+                    grades = data;
+                    cachedGrades = data;
+                    gradesCacheTimestamp = new Date().getTime();
+                    console.log('Sınav notları yüklendi:', data.length);
+                    resolve();
+                })
+                .catch(error => {
+                    console.error('Sınav notları yüklenirken hata:', error);
+                    resolve(); // Hata olsa bile resolve et, diğer işlemleri engelleme
+                });
+        }),
+        
+        // Kullanıcıları yükle (sadece admin için)
+        new Promise(resolve => {
+            if (isAdmin) {
+                console.log('Kullanıcılar yükleniyor...');
+                fetchWithTokenCheck('/api/users?minimal=true')
+                    .then(response => response.json())
+                    .then(data => {
+                        // Veri formatını kontrol et
+                        if (Array.isArray(data)) {
+                            cachedUsers = data;
+                            usersCacheTimestamp = new Date().getTime();
+                            console.log('Kullanıcılar yüklendi:', data.length);
+                        } else if (data.users && Array.isArray(data.users)) {
+                            cachedUsers = data.users;
+                            usersCacheTimestamp = new Date().getTime();
+                            console.log('Kullanıcılar yüklendi:', data.users.length);
+                        }
+                        resolve();
+                    })
+                    .catch(error => {
+                        console.error('Kullanıcılar yüklenirken hata:', error);
+                        resolve(); // Hata olsa bile resolve et
+                    });
+            } else {
+                resolve(); // Admin değilse hemen resolve et
+            }
+        })
+    ])
+    .then(() => {
+        console.log('Tüm veriler başarıyla yüklendi!');
+        
+        // Yükleme göstergesini kapat
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.opacity = '0';
+            setTimeout(() => {
+                if (loadingOverlay.parentNode) {
+                    loadingOverlay.parentNode.removeChild(loadingOverlay);
+                }
+            }, 500);
+        }
+        
+        // Modalları bir kez daha kontrol et
+        closeAllModals();
+    })
+    .catch(error => {
+        console.error('Veri yükleme sırasında genel bir hata oluştu:', error);
+    });
+}
+
 // Sayfa ilk yüklendiğinde arka planda verileri yükle - gecikmeli stratejisi
 document.addEventListener('DOMContentLoaded', () => {
     // Tüm modalları kapat - otomatik açılan modal sorunu için
@@ -11,6 +97,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     closeAllModals();
+    
+    // Modal kapatma davranışlarını ayarla
+    setupModalClosingBehaviors();
     
     // Sayfa yüklendikten sonra tekrar modalların kapalı olduğundan emin olalım
     setTimeout(() => {
@@ -27,17 +116,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }, 100);
     
-    // Sorunlu modalları özellikle kapat
-    const problematicModals = ['userManagementModal', 'editUserModal', 'deleteUserModal'];
-    problematicModals.forEach(modalId => {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            console.log(`Sorunlu modal özel olarak kapatılıyor: ${modalId}`);
-            modal.style.display = 'none';
-            modal.setAttribute('style', 'display: none !important');
-        }
-    });
-    
     // Sayfa hazır olduğunda bir kerelik bildirimi göster
     const loadingOverlay = document.createElement('div');
     loadingOverlay.id = 'loading-overlay';
@@ -47,90 +125,15 @@ document.addEventListener('DOMContentLoaded', () => {
     loadingIndicator.innerHTML = `
         <div style="background:var(--card-bg); border-radius:8px; padding:20px; box-shadow:0 4px 15px rgba(0,0,0,0.1); text-align:center; max-width:90%; width:300px">
             <div class="spinner" style="margin:0 auto 15px auto"></div>
-            <p style="margin:0; color:var(--text-color)">Uygulama hazırlanıyor...</p>
+            <p style="margin:0; color:var(--text-color)">Uygulama hızlı bir şekilde hazırlanıyor...</p>
         </div>
     `;
     loadingOverlay.appendChild(loadingIndicator);
     document.body.appendChild(loadingOverlay);
     
     
-    // Kaynakları aşamalı olarak yükle
-    const loadResources = () => {
-        console.log('Kaynaklar aşamalı olarak yükleniyor...');
-        
-        // İlk aşama - sayfanın temel içeriği için gerekli veriler
-        setTimeout(() => {
-            // Tekrar modalları kapatmayı dene
-            closeAllModals();
-            
-            // 500ms sonra ilk kritik verileri yükle (örn. ders programı)
-            initializeScheduleData();
-            
-            // 1 saniye sonra bildirime gerek olmayan ders programı verilerini hazırla
-            setTimeout(() => {
-                // Son kontrol - tüm modalları kapattığımızdan emin olalım
-                closeAllModals();
-                
-                loadDataFromTable();
-                
-                // Yükleme göstergesini kapat
-                loadingOverlay.style.opacity = '0';
-                setTimeout(() => {
-                    document.body.removeChild(loadingOverlay);
-                }, 500);
-                
-                // Modalların erken açılmasını engelle
-                closeAllModals();
-                
-                // İkinci aşama - geri kalan veriler için
-                setTimeout(() => {
-                    // Sınav notlarını arka planda yükle
-                    if (!cachedGrades) {
-                        console.log('Sınav notları arka planda yükleniyor...');
-                        fetch('/api/grades/get?meta_only=true')
-                            .then(response => response.json())
-                            .then(data => {
-                                grades = data;
-                                cachedGrades = data;
-                                gradesCacheTimestamp = new Date().getTime();
-                                console.log('Sınav notları arka planda yüklendi:', data.length);
-                            })
-                            .catch(error => {
-                                console.error('Sınav notları arka planda yüklenirken hata:', error);
-                            });
-                    }
-                    
-                    // Üçüncü aşama - en az önemli veriler
-                    setTimeout(() => {
-                        // Kullanıcıları arka planda yükle
-                        if (isAdmin && !cachedUsers) {
-                            console.log('Kullanıcılar arka planda yükleniyor...');
-                            fetchWithTokenCheck('/api/users?minimal=true')
-                                .then(response => response.json())
-                                .then(data => {
-                                    // Veri formatını kontrol et
-                                    if (Array.isArray(data)) {
-                                        cachedUsers = data;
-                                        usersCacheTimestamp = new Date().getTime();
-                                        console.log('Kullanıcılar arka planda yüklendi:', data.length);
-                                    } else if (data.users && Array.isArray(data.users)) {
-                                        cachedUsers = data.users;
-                                        usersCacheTimestamp = new Date().getTime();
-                                        console.log('Kullanıcılar arka planda yüklendi:', data.users.length);
-                                    }
-                                })
-                                .catch(error => {
-                                    console.error('Kullanıcılar arka planda yüklenirken hata:', error);
-                                });
-                        }
-                    }, 3000);
-                }, 2000);
-            }, 1000);
-        }, 500);
-    };
-    
-    // Kaynak yüklemeyi başlat
-    loadResources();
+    // Optimize edilmiş kaynak yükleme işlevini çağır
+    loadResourcesFaster();
     
     // Service worker'ı unregister etmek için
     if ('serviceWorker' in navigator) {
@@ -3415,6 +3418,87 @@ document.addEventListener('DOMContentLoaded', () => {
         
         console.log('Ders programı verileri tablodaki değerlerden toplandı:', scheduleData);
         return scheduleData;
+    }
+
+    // Tüm modallar için kapatma işlemini yapacak genel fonksiyon
+    function setupModalClosingBehaviors() {
+        console.log("Modal kapatma davranışları ayarlanıyor...");
+        
+        // Tüm kapatma butonlarını seç
+        const allCloseButtons = document.querySelectorAll('.close-modal, .close-modal-btn');
+        
+        // Tüm kapatma butonlarına event listener ekle
+        allCloseButtons.forEach(button => {
+            // Önceki event listener'ları kaldır (dup önlemek için)
+            button.removeEventListener('click', closeModalClickHandler);
+            button.addEventListener('click', closeModalClickHandler);
+        });
+        
+        // Dışarı tıklama olayını ayarla
+        window.removeEventListener('click', outsideClickHandler);
+        window.addEventListener('click', outsideClickHandler);
+        
+        console.log(`${allCloseButtons.length} adet modal kapatma butonu bulundu ve ayarlandı`);
+    }
+
+    // Kapatma butonuna tıklama işleyici
+    function closeModalClickHandler(event) {
+        const modal = this.closest('.modal');
+        if (modal) {
+            console.log(`Kapatma butonu tıklandı: ${modal.id} kapatılıyor`);
+            closeModal(modal);
+        }
+    }
+
+    // Dışarı tıklama işleyici
+    function outsideClickHandler(event) {
+        if (event.target.classList.contains('modal')) {
+            console.log(`Modal dışına tıklandı: ${event.target.id} kapatılıyor`);
+            closeModal(event.target);
+        }
+    }
+
+    // Tüm modalları kapatmayı sağlayan fonksiyon
+    function closeAllModals() {
+        console.log('Tüm modallar kapatılıyor...');
+        
+        // Tüm modalları al
+        const allModals = document.querySelectorAll('.modal');
+        
+        // Her bir modalı kapat
+        allModals.forEach(modal => {
+            // Doğrudan DOM öğesinin stilini değiştir
+            modal.style.display = 'none';
+            
+            // Modal ID'lerini logla ve zorla kapat
+            console.log(`Modal kapatılıyor: ${modal.id}`);
+            
+            // CSS ile de gizle
+            modal.setAttribute('style', 'display: none !important');
+        });
+        
+        // Arka plan scrollunu geri aç
+        document.body.style.overflow = '';
+        
+        // Alt blok ikonlarındaki active efektini kaldır
+        document.querySelectorAll('.icon-item').forEach(item => {
+            item.classList.remove('active');
+            item.classList.remove('hovered');
+        });
+        
+        // Özellikle bu modalları kapat
+        const problematicModals = ['userManagementModal', 'editUserModal', 'deleteUserModal'];
+        problematicModals.forEach(modalId => {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                console.log(`Sorunlu modal kapatılıyor: ${modalId}`);
+                modal.style.display = 'none';
+                modal.setAttribute('style', 'display: none !important');
+            }
+        });
+        
+        // Modalların kapatıldığını logla
+        console.log('Modallar kapatıldı');
     }
 }); 
 
