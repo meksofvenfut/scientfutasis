@@ -894,11 +894,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Doğrudan DOM öğesinin stilini değiştir
             modal.style.display = 'none';
             
-            // Modal ID'lerini logla ve zorla kapat
+            // Modal ID'lerini logla
             console.log(`Modal kapatılıyor: ${modal.id}`);
-            
-            // CSS ile de gizle
-            modal.setAttribute('style', 'display: none !important');
         });
         
         // Arka plan scrollunu geri aç
@@ -908,17 +905,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.icon-item').forEach(item => {
             item.classList.remove('active');
             item.classList.remove('hovered');
-        });
-        
-        // Özellikle bu modalları kapat
-        const problematicModals = ['userManagementModal', 'editUserModal', 'deleteUserModal'];
-        problematicModals.forEach(modalId => {
-            const modal = document.getElementById(modalId);
-            if (modal) {
-                console.log(`Sorunlu modal kapatılıyor: ${modalId}`);
-                modal.style.display = 'none';
-                modal.setAttribute('style', 'display: none !important');
-            }
         });
         
         // Modalların kapatıldığını logla
@@ -3502,80 +3488,81 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Tüm kapatma butonlarını seç
         const allCloseButtons = document.querySelectorAll('.close-modal, .close-modal-btn');
+        console.log(`Bulunan kapatma butonları: ${allCloseButtons.length}`);
         
         // Tüm kapatma butonlarına event listener ekle
         allCloseButtons.forEach(button => {
-            // Önceki event listener'ları kaldır (dup önlemek için)
-            button.removeEventListener('click', closeModalClickHandler);
-            button.addEventListener('click', closeModalClickHandler);
-        });
-        
-        // Dışarı tıklama olayını ayarla
-        window.removeEventListener('click', outsideClickHandler);
-        window.addEventListener('click', outsideClickHandler);
-        
-        console.log(`${allCloseButtons.length} adet modal kapatma butonu bulundu ve ayarlandı`);
-    }
-
-    // Kapatma butonuna tıklama işleyici
-    function closeModalClickHandler(event) {
-        const modal = this.closest('.modal');
-        if (modal) {
-            console.log(`Kapatma butonu tıklandı: ${modal.id} kapatılıyor`);
-            closeModal(modal);
-        }
-    }
-
-    // Dışarı tıklama işleyici
-    function outsideClickHandler(event) {
-        if (event.target.classList.contains('modal')) {
-            console.log(`Modal dışına tıklandı: ${event.target.id} kapatılıyor`);
-            closeModal(event.target);
-        }
-    }
-
-    // Tüm modalları kapatmayı sağlayan fonksiyon
-    function closeAllModals() {
-        console.log('Tüm modallar kapatılıyor...');
-        
-        // Tüm modalları al
-        const allModals = document.querySelectorAll('.modal');
-        
-        // Her bir modalı kapat
-        allModals.forEach(modal => {
-            // Doğrudan DOM öğesinin stilini değiştir
-            modal.style.display = 'none';
-            
-            // Modal ID'lerini logla ve zorla kapat
-            console.log(`Modal kapatılıyor: ${modal.id}`);
-            
-            // CSS ile de gizle
-            modal.setAttribute('style', 'display: none !important');
-        });
-        
-        // Arka plan scrollunu geri aç
-        document.body.style.overflow = '';
-        
-        // Alt blok ikonlarındaki active efektini kaldır
-        document.querySelectorAll('.icon-item').forEach(item => {
-            item.classList.remove('active');
-            item.classList.remove('hovered');
-        });
-        
-        // Özellikle bu modalları kapat
-        const problematicModals = ['userManagementModal', 'editUserModal', 'deleteUserModal'];
-        problematicModals.forEach(modalId => {
-            const modal = document.getElementById(modalId);
-            if (modal) {
-                console.log(`Sorunlu modal kapatılıyor: ${modalId}`);
-                modal.style.display = 'none';
-                modal.setAttribute('style', 'display: none !important');
+            // Tüm önceki işleyicileri kaldır
+            const clone = button.cloneNode(true);
+            if (button.parentNode) {
+                button.parentNode.replaceChild(clone, button);
+                
+                // Yeni işleyici ekle
+                clone.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const modal = this.closest('.modal');
+                    if (modal) {
+                        console.log(`Kapatma butonu tıklandı: ${modal.id}`);
+                        modal.style.display = 'none';
+                        document.body.style.overflow = '';
+                    }
+                });
             }
         });
         
-        // Modalların kapatıldığını logla
-        console.log('Modallar kapatıldı');
+        // Modal dışına tıklama işleyicisi
+        window.removeEventListener('click', handleOutsideClick); // Önceki işleyiciyi kaldır
+        window.addEventListener('click', handleOutsideClick);
+        
+        console.log(`${allCloseButtons.length} adet modal kapatma butonu ayarlandı`);
     }
+
+    // Dışarı tıklama işleyicisi
+    function handleOutsideClick(event) {
+        document.querySelectorAll('.modal').forEach(modal => {
+            if (event.target === modal) {
+                console.log(`Modal dışına tıklandı: ${modal.id}`);
+                modal.style.display = 'none';
+                document.body.style.overflow = '';
+            }
+        });
+    }
+
+    // Sayfa yüklendikten sonra modal kapatma davranışlarını mutlaka ayarla
+    window.addEventListener('load', function() {
+        console.log("Sayfa tam yüklendi, modal kapatma davranışları ayarlanıyor...");
+        setupModalClosingBehaviors();
+    });
+
+    // Kullanılabilirliği artırmak için her 3 saniyede bir modalları ve fonksiyonları kontrol et
+    setTimeout(function modalSetupChecker() {
+        console.log("Modal kapatma davranışları yeniden ayarlanıyor...");
+        setupModalClosingBehaviors();
+        
+        // Sorunlu modalları doğrudan düzelt
+        document.querySelectorAll('.modal').forEach(modal => {
+            // Her modalın kapatma butonunu bulup işleyicisini düzelt
+            const closeButton = modal.querySelector('.close-modal, .close-modal-btn');
+            if (closeButton) {
+                const clone = closeButton.cloneNode(true);
+                if (closeButton.parentNode) {
+                    closeButton.parentNode.replaceChild(clone, closeButton);
+                    
+                    clone.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log(`Modal ${modal.id} kapatılıyor (gecikmeli kontrolden)`);
+                        modal.style.display = 'none';
+                        document.body.style.overflow = '';
+                    });
+                }
+            }
+        });
+        
+        // 5 saniye sonra tekrar kontrol et
+        setTimeout(modalSetupChecker, 5000);
+    }, 3000);
 }); 
 
 // Modal başlıklarına yenileme butonları ekle
