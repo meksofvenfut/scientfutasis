@@ -589,13 +589,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // Modalı açma ve kapatma fonksiyonları
+    // Modal Açma/Kapama İşlevleri
     function openModal(modalElement) {
-        // Önce sayfayı kaydıralım, görüntünün bozulmaması için
+        // Önce açık olan tüm modalları kapat
+        closeAllModals();
+        
+        // Sayfayı kaydıralım, görüntünün bozulmaması için
         window.scrollTo(0, 0);
         
         // Modal'ı göster
-        modalElement.style.display = 'flex';
+        modalElement.style.display = 'block';
+        
+        // Body scroll'u kapat
+        document.body.style.overflow = 'hidden';
         
         // Modaldaki scroll'u üste taşı
         const modalBody = modalElement.querySelector('.modal-body');
@@ -610,7 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchHomeworks();
         }
     }
-    
+
     function closeModal(modalElement) {
         // Değişiklikler yapıldıysa ve ders programıysa kaydet
         if (hasChanges && modalElement === scheduleModal) {
@@ -625,12 +631,37 @@ document.addEventListener('DOMContentLoaded', () => {
         
         modalElement.style.display = 'none';
         
+        // Body scroll'u geri aç
+        document.body.style.overflow = '';
+        
         // Modal kapatıldığında alt blok ikonlarındaki active efektini kaldır
         document.querySelectorAll('.icon-item').forEach(item => {
             item.classList.remove('active');
             item.classList.remove('hovered');
         });
     }
+
+    // Tüm modalları kapatmayı sağlayan fonksiyon
+    function closeAllModals() {
+        const allModals = document.querySelectorAll('.modal');
+        allModals.forEach(modal => {
+            modal.style.display = 'none';
+        });
+        document.body.style.overflow = ''; // Arka plan scrollunu geri aç
+        
+        // Alt blok ikonlarındaki active efektini kaldır
+        document.querySelectorAll('.icon-item').forEach(item => {
+            item.classList.remove('active');
+            item.classList.remove('hovered');
+        });
+    }
+
+    // ESC tuşuyla açık olan modalı kapat
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeAllModals();
+        }
+    });
     
     // Kapatma düğmesi için olay dinleyicisi - Ders Programı
     closeModalBtn.addEventListener('click', () => {
