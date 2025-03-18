@@ -1,9 +1,7 @@
+// Sayfa ilk yüklendiğinde arka planda verileri yükle - gecikmeli stratejisi
 document.addEventListener('DOMContentLoaded', () => {
     // Tüm modalları kapat - otomatik açılan modal sorunu için
     closeAllModals();
-    
-    // Yenileme butonlarını ekle
-    addRefreshButtonsToModals();
     
     // Sayfa hazır olduğunda bir kerelik bildirimi göster
     const loadingOverlay = document.createElement('div');
@@ -19,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
     loadingOverlay.appendChild(loadingIndicator);
     document.body.appendChild(loadingOverlay);
+    
     
     // Kaynakları aşamalı olarak yükle
     const loadResources = () => {
@@ -3347,56 +3346,3 @@ document.addEventListener('DOMContentLoaded', () => {
 }); 
 
 // Modal başlıklarına yenileme butonları ekle
-function addRefreshButtonsToModals() {
-    // Sınav notları modalı için refresh butonu
-    const gradesModalHeader = document.querySelector('#gradesModal .modal-header');
-    if (gradesModalHeader) {
-        const refreshButton = document.createElement('button');
-        refreshButton.className = 'refresh-button';
-        refreshButton.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 4v6h-6"></path>
-                <path d="M1 20v-6h6"></path>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
-                <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            <span>Yenile</span>
-        `;
-        refreshButton.addEventListener('click', function() {
-            // Önbelleği sıfırla ve yeniden yükle
-            cachedGrades = null;
-            gradesCacheTimestamp = null;
-            fetchGrades();
-        });
-        
-        // Başlık ile kapatma butonu arasına ekle
-        const closeButton = gradesModalHeader.querySelector('.close-modal-btn');
-        gradesModalHeader.insertBefore(refreshButton, closeButton);
-    }
-    
-    // Kullanıcı yönetimi modalı için refresh butonu
-    const userModalHeader = document.querySelector('#userManagementModal .modal-header');
-    if (userModalHeader) {
-        const refreshButton = document.createElement('button');
-        refreshButton.className = 'refresh-button';
-        refreshButton.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 4v6h-6"></path>
-                <path d="M1 20v-6h6"></path>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
-                <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-            <span>Yenile</span>
-        `;
-        refreshButton.addEventListener('click', function() {
-            // Önbelleği sıfırla ve yeniden yükle
-            cachedUsers = null;
-            usersCacheTimestamp = null;
-            fetchUsers();
-        });
-        
-        // Başlık ile kapatma butonu arasına ekle
-        const closeButton = userModalHeader.querySelector('.close-modal-btn');
-        userModalHeader.insertBefore(refreshButton, closeButton);
-    }
-} 
