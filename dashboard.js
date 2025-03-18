@@ -143,12 +143,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // MODALLAR GÖRÜNMESİN DİYE İLK İŞ OLARAK BUNU YAP
     // Öncelikle tüm modalları HTML'den bağımsız olarak gizle
     const allModals = document.querySelectorAll('.modal');
-    allModals.forEach(modal => {
-        modal.style.display = 'none';
-        modal.style.visibility = 'hidden';
-        modal.setAttribute('aria-hidden', 'true');
-        console.log(`Modal gizlendi: ${modal.id}`);
-    });
+    if (allModals && allModals.length > 0) {
+        allModals.forEach(modal => {
+            if (modal) {
+                modal.style.display = 'none';
+                modal.style.visibility = 'hidden';
+                modal.setAttribute('aria-hidden', 'true');
+                console.log(`Modal gizlendi: ${modal.id}`);
+            }
+        });
+    }
     
     // Kullanıcı ile ilgili modalları özellikle kapat
     ['userManagementModal', 'editUserModal', 'deleteUserModal', 'addUserModal'].forEach(modalId => {
@@ -156,8 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modal) {
             modal.style.display = 'none';
             modal.style.visibility = 'hidden';
-            modal.style.opacity = '0';
-            console.log(`Kullanıcı modalı özellikle gizlendi: ${modalId}`);
+            modal.setAttribute('aria-hidden', 'true');
         }
     });
     
@@ -405,17 +408,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Tema değiştirme işlevi
-    themeToggle.addEventListener('click', () => {
-        const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-        
-        document.documentElement.setAttribute('data-theme', newTheme);
-        
-        // Temayı localStorage'a kaydet
-        localStorage.setItem('theme', newTheme);
-        
-        console.log('Tema değiştirildi:', newTheme);
-    });
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            
+            // Temayı localStorage'a kaydet
+            localStorage.setItem('theme', newTheme);
+            
+            console.log('Tema değiştirildi:', newTheme);
+        });
+    }
     
     // Sayfa yüklendiğinde kaydedilmiş temayı kontrol et
     const savedTheme = localStorage.getItem('theme');
@@ -485,36 +490,44 @@ document.addEventListener('DOMContentLoaded', () => {
     let editingHomeworkId = null;
     
     // İkonlar için tıklama ve hover işlemleri
-    iconItems.forEach((item, index) => {
-        // Hover durumunda tüm alanın vurgulanması için
-        item.addEventListener('mouseenter', () => {
-            item.classList.add('hovered');
-        });
-        
-        item.addEventListener('mouseleave', () => {
-            item.classList.remove('hovered');
-        });
-        
-        // Tıklama işlemi
-        item.addEventListener('click', (e) => {
-            const bölümler = ["Ders Programı", "Ödevler", "Duyurular", "Sınav Notları"];
-            console.log(`${bölümler[index]} bölümüne tıklandı`);
+    if (iconItems && iconItems.length > 0) {
+        iconItems.forEach((item, index) => {
+            if (!item) return; // Eğer item null ise atla
             
-            // Aktif olan ikonu vurgula
-            iconItems.forEach(i => i.classList.remove('active'));
-            item.classList.add('active');
+            // Hover durumunda tüm alanın vurgulanması için
+            item.addEventListener('mouseenter', () => {
+                item.classList.add('hovered');
+            });
             
-            // İlgili modalı aç
-            if (index === 0 && scheduleModal) { // İlk ikon Ders Programı
-                openModal(scheduleModal);
-            } else if (index === 1 && homeworkModal) { // İkinci ikon Ödevler
-                openModal(homeworkModal);
-            } else if (index === 2 && announcementsModal) { // Üçüncü ikon Duyurular
-                openModal(announcementsModal);
-                fetchAnnouncements();
-            }
+            item.addEventListener('mouseleave', () => {
+                item.classList.remove('hovered');
+            });
+            
+            // Tıklama işlemi
+            item.addEventListener('click', (e) => {
+                const bölümler = ["Ders Programı", "Ödevler", "Duyurular", "Sınav Notları"];
+                console.log(`${bölümler[index]} bölümüne tıklandı`);
+                
+                // Aktif olan ikonu vurgula
+                if (iconItems && iconItems.length > 0) {
+                    iconItems.forEach(i => {
+                        if (i) i.classList.remove('active');
+                    });
+                }
+                item.classList.add('active');
+                
+                // İlgili modalı aç
+                if (index === 0 && scheduleModal) { // İlk ikon Ders Programı
+                    openModal(scheduleModal);
+                } else if (index === 1 && homeworkModal) { // İkinci ikon Ödevler
+                    openModal(homeworkModal);
+                } else if (index === 2 && announcementsModal) { // Üçüncü ikon Duyurular
+                    openModal(announcementsModal);
+                    fetchAnnouncements();
+                }
+            });
         });
-    });
+    }
     
     // Ders programı düzenleme işlevselliği
     const editableCells = document.querySelectorAll('.editable-cell');
