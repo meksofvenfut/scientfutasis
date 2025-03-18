@@ -827,7 +827,7 @@ html[data-theme="dark"] .light-icon {
     box-sizing: border-box;
 }
 
-.modal[style*="display: flex"] {
+.modal[style*="display:"] {
     display: flex !important;
     align-items: center;
     justify-content: center;
@@ -845,7 +845,7 @@ html[data-theme="dark"] .light-icon {
     background-color: rgba(0, 0, 0, 0.7);
 }
 
-.main-content .modal[style*="display: flex"] {
+.main-content .modal[style*="display:"] {
     display: flex !important;
     align-items: center;
     justify-content: center;
@@ -865,7 +865,7 @@ html[data-theme="dark"] .light-icon {
     max-width: 1000px;
     height: auto;
     max-height: 80vh;
-    margin: auto;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
     animation: fadeIn 0.3s ease-in-out;
