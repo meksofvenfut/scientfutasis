@@ -837,36 +837,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let usersCacheTimestamp = null;
     const CACHE_EXPIRY = 5 * 60 * 1000; // 5 dakika (milisaniye)
     
-    // Tüm modalları kapatmayı sağlayan fonksiyon
-    function closeAllModals() {
-        console.log('Tüm modallar kapatılıyor...');
-        
-        // Tüm modalları al
-        const allModals = document.querySelectorAll('.modal');
-        
-        // Her bir modalı kapat
-        allModals.forEach(modal => {
-            // Doğrudan DOM öğesinin stilini değiştir
-            modal.style.display = 'none';
-            modal.style.visibility = 'hidden';
-            
-            // Modal ID'lerini logla
-            console.log(`Modal kapatılıyor: ${modal.id}`);
-        });
-        
-        // Arka plan scrollunu geri aç
-        document.body.style.overflow = '';
-        
-        // Alt blok ikonlarındaki active efektini kaldır
-        document.querySelectorAll('.icon-item').forEach(item => {
-            item.classList.remove('active');
-            item.classList.remove('hovered');
-        });
-        
-        // Modalların kapatıldığını logla
-        console.log('Modallar kapatıldı');
-    }
-
     // Modaldaki tüm kapatma butonlarını kur
     function setupModalClosers(modalElement) {
         // X butonu
