@@ -1976,7 +1976,7 @@ function addAnnouncementExamples() {
         const announcements = [
             { title: 'Ara Tatil Duyurusu', content: 'Okulumuz 15-19 Nisan tarihleri arasında ara tatil nedeniyle kapalı olacaktır.', importance: 'important' },
             { title: 'Veli Toplantısı', content: 'Veli toplantımız 10 Nisan Cuma günü saat 14:00\'da yapılacaktır. Tüm velilerimiz davetlidir.', importance: 'normal' },
-            { title: 'Bilim Şenliği', content: 'Okulumuzda 25 Mayıs tarihinde bilim şenliği düzenlenecektir. Tüm öğrencilerimizin katılımını bekliyoruz.', importance: 'normal' }
+            { title: 'Bilim Şenliği', content: 'Okulumuzda 25 Mayıs tarihinde bilim şenliği düzenlenecektır. Tüm öğrencilerimizin katılımını bekliyoruz.', importance: 'normal' }
         ];
         
         const now = new Date().toISOString();
@@ -2499,23 +2499,30 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         
         const now = new Date().toISOString();
     
-    // Dosya bilgileri
-        let filePath = file ? file.path : null;
-        // Dosya adını düzgün şekilde kaydet - filename zaten filename handler'da dönüştürüldü
-        const fileName = file ? file.filename : null;
-        const fileSize = file ? file.size : null;
+        // Dosya bilgileri
+        let filePath = '';
+        let fileName = '';
+        let fileSize = 0;
         
-        // Render.com üzerinde çalışıyorsa, mutlak dosya yollarını kullan
-        if (file && isRunningOnRender) {
-            // Render'da file.path içinde tam yol olmayabilir, bu durumda oluşturalım
-            if (!filePath.startsWith('/')) {
-                filePath = path.join(uploadDir, fileName);
-            }
-            console.log('Render.com üzerinde dosya yolu düzeltildi:', filePath);
-        }
-        
-        // Dosya bilgilerini loglayalım
         if (file) {
+            // Render.com üzerinde çalışıyorsa, mutlak dosya yollarını kullan
+            const isRunningOnRender = process.env.RENDER && process.env.RENDER === 'true';
+            const renderBasePath = '/opt/render/project/src';
+            
+            // Dosya adı ve yolunu belirle
+            fileName = file.filename; // Filename handler tarafından oluşturuldu
+            
+            if (isRunningOnRender) {
+                // Render.com üzerinde tam yol kullan
+                filePath = path.join(renderBasePath, 'uploads', fileName);
+            } else {
+                // Yerel geliştirme ortamında normal yol kullan
+                filePath = file.path;
+            }
+            
+            fileSize = file.size;
+            
+            // Dosya bilgilerini logla
             console.log('Dosya bilgileri:', {
                 path: filePath,
                 name: fileName,
@@ -2775,7 +2782,7 @@ app.delete('/api/grades/delete/:id', (req, res) => {
 // 5. Sınav notu dosyasını indir
 app.get('/api/grades/download/:id', (req, res) => {
     try {
-    const gradeId = req.params.id;
+        const gradeId = req.params.id;
         console.log('Sınav notu dosyası indirme isteği alındı:', gradeId);
         
         if (!gradeId) {
@@ -2817,86 +2824,56 @@ app.get('/api/grades/download/:id', (req, res) => {
             // Dosya bilgilerini logla
             console.log('Veritabanından alınan dosya bilgileri:', row);
             
-            // Eğer dosya varsa indirme işlemi başlat
+            // Dosya yolu ve adını al
             const filePath = row.file_path;
-            // Dosya adı veritabanından doğrudan gelir, zaten düzgün şekilde kaydedilmiş olmalı
-            let fileName = row.file_name || 'dosya';
+            const fileName = row.file_name;
             
-            console.log(`Dosya indiriliyor: ${filePath} - ${fileName}`);
+            // Dosya adından timestamp ve random kısmını ayır
+            const fileNameParts = fileName ? fileName.split('_') : [];
+            const actualFileName = fileNameParts.length >= 3 
+                ? fileNameParts.slice(2).join('_')  // İlk iki kısmı (timestamp ve random) atla
+                : fileName; // Eski format dosya adı
             
-            // Olası dosya yollarını kontrol et - daha fazla olasılık ekleyelim
-            const __dirnameFull = path.resolve(__dirname);
-            const fileBaseName = path.basename(filePath);
+            console.log(`Dosya indiriliyor: ${filePath}`);
+            console.log(`Orijinal dosya adı: ${fileName}, İndirilecek dosya adı: ${actualFileName || fileName}`);
             
-            // Render.com için özel yollar
-            const renderBasePath = '/opt/render/project/src';
-            const isRunningOnRender = fs.existsSync(renderBasePath);
-            
-            console.log('isRunningOnRender:', isRunningOnRender);
-            console.log('__dirname:', __dirname);
-            console.log('__dirnameFull:', __dirnameFull);
-            
-            let possiblePaths = [
-                filePath,                                                       // Veritabanından gelen orijinal yol
-                path.join(__dirname, 'uploads', fileBaseName),                  // uploads klasöründe dosya adı
-                path.join(__dirname, fileBaseName),                             // Ana dizinde dosya adı 
-                path.join(__dirname, 'uploads', fileName),                      // uploads klasöründe dosya adı (file_name)
-                path.join(__dirname, fileName),                                 // Ana dizinde dosya adı (file_name)
-                path.resolve(filePath),                                         // Mutlak yol
-                path.join(__dirnameFull, 'uploads', fileBaseName),              // Tam yolda uploads
-                path.join(__dirnameFull, fileBaseName),                         // Tam yolda dosya
-                path.join(__dirnameFull, 'uploads', path.basename(fileName)),   // Tam yolda uploads ve dosya adı
-                path.join(__dirnameFull, path.basename(fileName))               // Tam yolda dosya adı
-            ];
-            
-            // Render.com özel yollarını ekle
-            if (isRunningOnRender) {
-                possiblePaths = possiblePaths.concat([
-                    path.join(renderBasePath, fileBaseName),                       // Render ana dizininde dosya adı
-                    path.join(renderBasePath, 'uploads', fileBaseName),            // Render uploads klasöründe dosya adı
-                    path.join(renderBasePath, fileName),                           // Render ana dizininde file_name
-                    path.join(renderBasePath, 'uploads', fileName),                // Render uploads klasöründe file_name
-                    path.join(renderBasePath, 'uploads', path.basename(filePath)), // Render'da dosya yolu basename'i
-                    // Render.com'da klasör yaratma sırasında oluşabilecek alt dizinler için
-                    '/opt/render/project/src/uploads/' + fileBaseName,
-                    '/opt/render/project/src/uploads/' + fileName
-                ]);
-            }
-            
-            console.log('Kontrol edilecek olası dosya yolları:', possiblePaths);
-            
-            // Dosya yollarını kontrol et ve ilk bulunanı kullan
-            let foundPath = null;
-            for (const pathToCheck of possiblePaths) {
-                console.log(`Kontrol ediliyor: ${pathToCheck}`);
-                if (fs.existsSync(pathToCheck)) {
-                    foundPath = pathToCheck;
-                    console.log(`Dosya bulundu: ${foundPath}`);
-                    break;
-                } else {
-                    console.log(`Dosya bulunamadı: ${pathToCheck}`);
-                }
-            }
-            
-            if (foundPath) {
-                    // Dosyayı gönder
-                    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-                    res.setHeader('Content-Type', 'application/octet-stream');
-                    
-                const fileStream = fs.createReadStream(foundPath);
-                    fileStream.pipe(res);
-                    
-                    fileStream.on('error', (error) => {
-                        console.error('Dosya okuma hatası:', error);
-                        if (!res.headersSent) {
-                            res.status(500).json({ 
-                                success: false, 
-                                message: 'Dosya okuma hatası', 
-                                error: error.message 
-                            });
-                        }
-                    });
-                } else {
+            // Dosya yolunun varlığını kontrol et
+            if (fs.existsSync(filePath)) {
+                console.log(`Dosya bulundu: ${filePath}`);
+                
+                // Dosyayı gönder
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(actualFileName || fileName)}`);
+                res.setHeader('Content-Type', 'application/octet-stream');
+                
+                const fileStream = fs.createReadStream(filePath);
+                fileStream.pipe(res);
+                
+                fileStream.on('error', (error) => {
+                    console.error('Dosya okuma hatası:', error);
+                    if (!res.headersSent) {
+                        res.status(500).json({ 
+                            success: false, 
+                            message: 'Dosya okuma hatası', 
+                            error: error.message 
+                        });
+                    }
+                });
+            } else {
+                console.log(`Dosya bulunamadı: ${filePath}`);
+                
+                // Olası dosya yollarını kontrol et
+                const __dirnameFull = path.resolve(__dirname);
+                const fileBaseName = path.basename(filePath);
+                
+                // Render.com için özel yollar
+                const renderBasePath = '/opt/render/project/src';
+                const isRunningOnRender = fs.existsSync(renderBasePath);
+                
+                // Bunlar çalışma ortamına göre dosya yolları
+                let currentUploadDir = isRunningOnRender 
+                    ? path.join(renderBasePath, 'uploads') 
+                    : path.join(__dirname, 'uploads');
+                
                 console.error(`Dosya hiçbir yerde bulunamadı!`);
                 console.error(`Kontrol edilen yollar:`, possiblePaths);
                 
