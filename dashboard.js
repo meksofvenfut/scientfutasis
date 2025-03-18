@@ -1,12 +1,42 @@
 // Sayfa ilk yüklendiğinde arka planda verileri yükle - gecikmeli stratejisi
 document.addEventListener('DOMContentLoaded', () => {
     // Tüm modalları kapat - otomatik açılan modal sorunu için
+    console.log("DOMContentLoaded: Modalları kapatma işlemi başlıyor...");
+    
+    // Modalları zorla kapat - CSS stillerini kullanarak
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.style.display = 'none';
+        modal.setAttribute('style', 'display: none !important');
+        console.log(`Modal zorla kapatıldı: ${modal.id}`);
+    });
+    
     closeAllModals();
     
     // Sayfa yüklendikten sonra tekrar modalların kapalı olduğundan emin olalım
     setTimeout(() => {
+        console.log("Modalları tekrar kapatma işlemi (100ms)");
         closeAllModals();
+        
+        // Eğer hala modallar açıksa, CSS ile zorla kapat
+        document.querySelectorAll('.modal').forEach(modal => {
+            if (modal.style.display !== 'none') {
+                console.log(`Açık kalan modal zorla kapatılıyor: ${modal.id}`);
+                modal.style.display = 'none';
+                modal.setAttribute('style', 'display: none !important');
+            }
+        });
     }, 100);
+    
+    // Sorunlu modalları özellikle kapat
+    const problematicModals = ['userManagementModal', 'editUserModal', 'deleteUserModal'];
+    problematicModals.forEach(modalId => {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            console.log(`Sorunlu modal özel olarak kapatılıyor: ${modalId}`);
+            modal.style.display = 'none';
+            modal.setAttribute('style', 'display: none !important');
+        }
+    });
     
     // Sayfa hazır olduğunda bir kerelik bildirimi göster
     const loadingOverlay = document.createElement('div');
@@ -782,13 +812,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Her bir modalı kapat
         allModals.forEach(modal => {
-            // Önce display:none yap
+            // Doğrudan DOM öğesinin stilini değiştir
             modal.style.display = 'none';
             
-            // Forceyle düzgün kapanması için ek adım
-            setTimeout(() => {
-                modal.style.display = 'none';
-            }, 10);
+            // Modal ID'lerini logla ve zorla kapat
+            console.log(`Modal kapatılıyor: ${modal.id}`);
+            
+            // CSS ile de gizle
+            modal.setAttribute('style', 'display: none !important');
         });
         
         // Arka plan scrollunu geri aç
@@ -798,6 +829,17 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.icon-item').forEach(item => {
             item.classList.remove('active');
             item.classList.remove('hovered');
+        });
+        
+        // Özellikle bu modalları kapat
+        const problematicModals = ['userManagementModal', 'editUserModal', 'deleteUserModal'];
+        problematicModals.forEach(modalId => {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                console.log(`Sorunlu modal kapatılıyor: ${modalId}`);
+                modal.style.display = 'none';
+                modal.setAttribute('style', 'display: none !important');
+            }
         });
         
         // Modalların kapatıldığını logla
@@ -1964,6 +2006,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Kart elementini oluştur
                 const card = document.createElement('div');
+                
                 
                 // Önem durumuna göre sınıf ekle
                 let importanceClass = '';
