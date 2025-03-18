@@ -823,7 +823,7 @@ html[data-theme="dark"] .light-icon {
     height: 100%;
     background-color: rgba(0, 0, 0, 0.7);
     z-index: 1500;
-    overflow: auto;
+    overflow: hidden;
     animation: fadeIn 0.3s ease;
     padding: 60px 0;
     box-sizing: border-box;
@@ -859,15 +859,11 @@ html[data-theme="dark"] .light-icon {
     box-shadow: var(--box-shadow);
     width: 90%;
     max-width: 1000px;
-    max-height: 85vh;
-    overflow-y: auto;
-    animation: slideIn 0.3s ease;
-    margin: 20px auto;
-}
-
-@keyframes slideIn {
-    from { transform: translateY(-50px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
+    height: calc(100vh - 140px);
+    max-height: calc(100vh - 140px);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-header {
@@ -904,7 +900,7 @@ html[data-theme="dark"] .light-icon {
 
 .modal-body {
     padding: 0.55rem;
-    max-height: calc(98vh - 100px);
+    flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
 }
