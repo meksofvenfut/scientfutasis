@@ -890,8 +890,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        console.log('Modal açılıyor: ', modalElement.id);
-        
         // Tüm modalları kapat
         closeAllModals();
         
@@ -963,26 +961,18 @@ document.addEventListener('DOMContentLoaded', () => {
             resetHomeworkForm();
         }
         
-        console.log('Modal kapatılıyor: ', modalElement.id);
-        
         // Modal'ı kapat - doğrudan DOM özelliklerini kullan
         modalElement.style.display = 'none';
         modalElement.style.visibility = 'hidden';
-        modalElement.style.opacity = '0';
         
         // Body scroll'u geri aç
         document.body.style.overflow = '';
         
         // Modal kapatıldığında alt blok ikonlarındaki active efektini kaldır
-        const iconItems = document.querySelectorAll('.icon-item');
-        if (iconItems && iconItems.length > 0) {
-            iconItems.forEach(item => {
-                if (item) {
-                    item.classList.remove('active');
-                    item.classList.remove('hovered');
-                }
-            });
-        }
+        document.querySelectorAll('.icon-item').forEach(item => {
+            item.classList.remove('active');
+            item.classList.remove('hovered');
+        });
     }
     // Ders programını sunucuya kaydet
     function saveSchedule() {
