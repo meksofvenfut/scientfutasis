@@ -2506,7 +2506,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         
         if (file) {
             // Render.com üzerinde çalışıyorsa, mutlak dosya yollarını kullan
-            const isRunningOnRender = process.env.RENDER && process.env.RENDER === 'true';
+            const isRunningOnRender = fs.existsSync('/opt/render/project/src');
             const renderBasePath = '/opt/render/project/src';
             
             // Dosya adı ve yolunu belirle
