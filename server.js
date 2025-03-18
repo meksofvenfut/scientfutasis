@@ -288,43 +288,22 @@ if (!fs.existsSync(uploadDir)) {
 // Dosya yükleme ayarları
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        // Mevcut olduğundan emin ol
+        const uploadDir = isRunningOnRender ? path.join(renderBasePath, 'uploads') : path.join(__dirname, 'uploads');
         if (!fs.existsSync(uploadDir)) {
-            console.log('Uploads klasörü tekrar kontrol edildi, bulunamadı. Yeniden oluşturuluyor...');
-            try {
-                fs.mkdirSync(uploadDir, { recursive: true });
-                console.log('Uploads klasörü başarıyla yeniden oluşturuldu.');
-            } catch (dirError) {
-                console.error('Uploads klasörü oluşturulurken hata:', dirError);
-            }
+            fs.mkdirSync(uploadDir, { recursive: true });
         }
-        
         console.log('Dosya yükleme hedefi:', uploadDir);
         cb(null, uploadDir);
     },
     filename: function (req, file, cb) {
-        // Dosya adı içindeki Türkçe karakterleri düzgün şekilde sakla
-        // HTTP başlığından gelen dosya adını UTF-8'e dönüştür
-        // Multer dosya adlarını binary olarak alır, bu yüzden açıkça dönüştürüyoruz
-        let originalName = file.originalname;
-        
-        try {
-            // Dosya adını UTF-8'e dönüştür
-            // Latin1 (ISO-8859-1) encoding'den başlayacağız çünkü HTTP başlıkları genellikle bu şekilde gelir
-            originalName = Buffer.from(originalName, 'binary').toString('utf8');
-        } catch (error) {
-            console.error('Dosya adı dönüştürme hatası:', error);
-        }
-        
-        // Dosya adında güvenlik için zararlı karakterleri temizle, ama Türkçe karakterleri koru
-        const safeName = originalName.replace(/[\/\\:*?"<>|]/g, '_');
-        console.log(`Orijinal dosya adı: ${file.originalname}, Kayıt edilecek: ${safeName}`);
-        
-        // Dosyanın tam yolunu da logla
-        const fullPath = path.join(uploadDir, safeName);
-        console.log('Oluşturulacak tam dosya yolu:', fullPath);
-        
-        cb(null, safeName);
+        // Orjinal dosya adını al ve UTF-8 formatında doğru şekilde kodla
+        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        console.log('Orijinal dosya adı:', file.originalname, ', Düzeltilmiş:', originalName);
+        // Dosyanın uzantısını ve adını ayır
+        const ext = path.extname(originalName);
+        const nameWithoutExt = path.basename(originalName, ext);
+        // Dosyayı kaydet
+        cb(null, nameWithoutExt + ext);
     }
 });
 
@@ -2510,8 +2489,8 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
         let fileType = '';
         
         if (file) {
-            // Dosya bilgilerini al
-            fileName = file.originalname;
+            // Dosya bilgilerini al - Türkçe karakter düzeltmesi
+            fileName = Buffer.from(file.originalname, 'latin1').toString('utf8');
             fileSize = file.size;
             fileType = file.mimetype;
             
@@ -2525,7 +2504,7 @@ app.post('/api/grades/add', upload.single('file'), (req, res) => {
                 name: fileName,
                 size: fileSize,
                 type: fileType,
-                dataLength: fileData.length
+                dataLength: fileData ? fileData.length : 0
             });
         }
         
@@ -3442,3 +3421,70 @@ app.post('/api/homework/cleanup', (req, res) => {
         });
     }
 }); 
+
+// Sınav notu indirme
+app.get('/api/grades/download/:id', (req, res) => {
+    try {
+        const id = req.params.id;
+        console.log('Sınav notu indirme isteği:', id);
+        
+        let query;
+        if (isPg) {
+            query = 'SELECT file_name, file_type, file_data FROM grades WHERE id = $1';
+        } else {
+            query = 'SELECT file_name, file_type, file_data FROM grades WHERE id = ?';
+        }
+        
+        db.get(query, [id], (err, row) => {
+            if (err) {
+                console.error('Dosya bilgileri alınırken hata:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Dosya bilgileri alınırken bir hata oluştu',
+                    error: err.message
+                });
+            }
+            
+            if (!row || !row.file_data) {
+                console.error('Dosya bulunamadı:', id);
+                return res.status(404).json({
+                    success: false,
+                    message: 'Dosya bulunamadı'
+                });
+            }
+            
+            try {
+                // Base64'ten dosyayı çöz
+                const fileBuffer = Buffer.from(row.file_data, 'base64');
+                
+                // Dosya adını ve tipini doğru şekilde ayarla
+                const fileName = row.file_name;
+                const contentType = row.file_type || 'application/octet-stream';
+                
+                // Dosya bilgilerini ayarla
+                res.setHeader('Content-Type', contentType);
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+                res.setHeader('Content-Length', fileBuffer.length);
+                
+                // Dosyayı gönder
+                res.send(fileBuffer);
+                
+                console.log('Dosya başarıyla gönderildi:', fileName);
+            } catch (error) {
+                console.error('Dosya gönderilirken hata:', error);
+                return res.status(500).json({
+                    success: false,
+                    message: 'Dosya gönderilirken bir hata oluştu',
+                    error: error.message
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Dosya indirme hatası:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Sunucu hatası',
+            error: error.message
+        });
+    }
+});
