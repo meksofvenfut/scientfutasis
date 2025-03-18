@@ -2,6 +2,36 @@
 const CACHE_DURATION = 5 * 60 * 1000; // 5 dakika (milisaniye cinsinden)
 // Paralel veri yükleme için Promise.all kullanımı
 
+// Tüm modalları kapatmayı sağlayan fonksiyon
+function closeAllModals() {
+    console.log('Tüm modallar kapatılıyor...');
+    
+    // Tüm modalları al
+    const allModals = document.querySelectorAll('.modal');
+    
+    // Her bir modalı kapat
+    allModals.forEach(modal => {
+        // Doğrudan DOM öğesinin stilini değiştir
+        modal.style.display = 'none';
+        modal.style.visibility = 'hidden';
+        
+        // Modal ID'lerini logla
+        console.log(`Modal kapatılıyor: ${modal.id}`);
+    });
+    
+    // Arka plan scrollunu geri aç
+    document.body.style.overflow = '';
+    
+    // Alt blok ikonlarındaki active efektini kaldır
+    document.querySelectorAll('.icon-item').forEach(item => {
+        item.classList.remove('active');
+        item.classList.remove('hovered');
+    });
+    
+    // Modalların kapatıldığını logla
+    console.log('Modallar kapatıldı');
+}
+
 // Optimize edilmiş veri yükleme işlevi
 function loadResourcesFaster() {
     console.log('Kaynaklar hızlı bir şekilde yükleniyor...');
@@ -827,6 +857,62 @@ document.addEventListener('DOMContentLoaded', () => {
     let usersCacheTimestamp = null;
     const CACHE_EXPIRY = 5 * 60 * 1000; // 5 dakika (milisaniye)
     
+    // Tüm modalları kapatmayı sağlayan fonksiyon
+    function closeAllModals() {
+        console.log('Tüm modallar kapatılıyor...');
+        
+        // Tüm modalları al
+        const allModals = document.querySelectorAll('.modal');
+        
+        // Her bir modalı kapat
+        allModals.forEach(modal => {
+            // Doğrudan DOM öğesinin stilini değiştir
+            modal.style.display = 'none';
+            modal.style.visibility = 'hidden';
+            
+            // Modal ID'lerini logla
+            console.log(`Modal kapatılıyor: ${modal.id}`);
+        });
+        
+        // Arka plan scrollunu geri aç
+        document.body.style.overflow = '';
+        
+        // Alt blok ikonlarındaki active efektini kaldır
+        document.querySelectorAll('.icon-item').forEach(item => {
+            item.classList.remove('active');
+            item.classList.remove('hovered');
+        });
+        
+        // Modalların kapatıldığını logla
+        console.log('Modallar kapatıldı');
+    }
+
+    // Modaldaki tüm kapatma butonlarını kur
+    function setupModalClosers(modalElement) {
+        // X butonu
+        const closeBtn = modalElement.querySelector('.close-modal');
+        if (closeBtn) {
+            closeBtn.onclick = function() {
+                closeModal(modalElement);
+            };
+        }
+        
+        // İptal butonları
+        const cancelBtns = modalElement.querySelectorAll('.close-modal-btn, .secondary-button');
+        cancelBtns.forEach(btn => {
+            btn.onclick = function() {
+                closeModal(modalElement);
+            };
+        });
+        
+        // Modal dışına tıklandığında kapatma
+        modalElement.onclick = function(event) {
+            if (event.target === modalElement) {
+                closeModal(modalElement);
+            }
+        };
+    }
+
     // Modal Açma/Kapama İşlevleri
     function openModal(modalElement) {
         // Parametre kontrolü - geçersiz modal ise işlemi iptal et
@@ -847,17 +933,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Sayfayı kaydıralım, görüntünün bozulmaması için
         window.scrollTo(0, 0);
         
-        // Stil niteliklerini kaldır ve görünür CSS sınıfını ekle
+        // Modal'ın stillerini tamamen temizle (inline stillerini kaldır)
         modalElement.removeAttribute('style');
-        modalElement.setAttribute('aria-hidden', 'false');
-        modalElement.classList.add('visible');
         
-        // 10ms sonra display özelliğini de ayarla (CSS sınıfı yetmezse)
-        setTimeout(() => {
-            modalElement.style.display = 'flex';
-            modalElement.style.visibility = 'visible';
-            modalElement.style.opacity = '1';
-        }, 10);
+        // Modal'ı göster - !important yerine doğrudan DOM özelliğini kullan
+        modalElement.style.display = 'flex';
+        modalElement.style.visibility = 'visible';
+        modalElement.style.opacity = '1';
         
         // Body scroll'u kapat
         document.body.style.overflow = 'hidden';
@@ -916,14 +998,9 @@ document.addEventListener('DOMContentLoaded', () => {
             resetHomeworkForm();
         }
         
-        // Modal'ı kapat - CSS sınıfını kaldır
-        modalElement.classList.remove('visible');
-        
-        // Stil niteliklerini de ayarla
+        // Modal'ı kapat - doğrudan DOM özelliklerini kullan
         modalElement.style.display = 'none';
         modalElement.style.visibility = 'hidden';
-        modalElement.style.opacity = '0';
-        modalElement.setAttribute('aria-hidden', 'true');
         
         // Body scroll'u geri aç
         document.body.style.overflow = '';
@@ -934,105 +1011,6 @@ document.addEventListener('DOMContentLoaded', () => {
             item.classList.remove('hovered');
         });
     }
-
-    // Modaldaki tüm kapatma butonlarını kur
-    function setupModalClosers(modalElement) {
-        // X butonu
-        const closeBtn = modalElement.querySelector('.close-modal');
-        if (closeBtn) {
-            closeBtn.onclick = function() {
-                closeModal(modalElement);
-            };
-        }
-        
-        // İptal butonları
-        const cancelBtns = modalElement.querySelectorAll('.close-modal-btn, .secondary-button');
-        cancelBtns.forEach(btn => {
-            btn.onclick = function() {
-                closeModal(modalElement);
-            };
-        });
-        
-        // Modal dışına tıklandığında kapatma
-        modalElement.onclick = function(event) {
-            if (event.target === modalElement) {
-                closeModal(modalElement);
-            }
-        };
-    }
-
-    // Tüm modalları kapatmayı sağlayan fonksiyon
-    function closeAllModals() {
-        console.log('Tüm modallar kapatılıyor...');
-        
-        // Tüm modalları al
-        const allModals = document.querySelectorAll('.modal');
-        
-        // Her bir modalı kapat
-        allModals.forEach(modal => {
-            // Doğrudan DOM öğesinin stilini değiştir
-            modal.style.display = 'none';
-            modal.style.visibility = 'hidden';
-            
-            // Modal ID'lerini logla
-            console.log(`Modal kapatılıyor: ${modal.id}`);
-        });
-        
-        // Arka plan scrollunu geri aç
-        document.body.style.overflow = '';
-        
-        // Alt blok ikonlarındaki active efektini kaldır
-        document.querySelectorAll('.icon-item').forEach(item => {
-            item.classList.remove('active');
-            item.classList.remove('hovered');
-        });
-        
-        // Kapatma butonlarını yeniden ayarla
-        document.querySelectorAll('.modal').forEach(modal => {
-            setupModalClosers(modal);
-        });
-        
-        // Modalların kapatıldığını logla
-        console.log('Modallar kapatıldı');
-    }
-    
-    // ESC tuşuyla açık olan modalı kapat
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            closeAllModals();
-        }
-    });
-    
-    // Kapatma düğmesi için olay dinleyicisi - Ders Programı
-    closeModalBtn.addEventListener('click', () => {
-        closeModal(scheduleModal);
-    });
-    
-    // Kapatma düğmesi için olay dinleyicisi - Ödevler
-    homeworkCloseBtn.addEventListener('click', () => {
-        closeModal(homeworkModal);
-    });
-    
-    // Modal dışına tıklandığında kapat
-    window.addEventListener('click', (e) => {
-        if (e.target === scheduleModal) {
-            closeModal(scheduleModal);
-        } else if (e.target === homeworkModal) {
-            closeModal(homeworkModal);
-        }
-    });
-    
-    // Klavye ESC tuşu ile kapatma
-    window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            if (scheduleModal.style.display === 'flex') {
-                closeModal(scheduleModal);
-            } else if (homeworkModal.style.display === 'flex') {
-                closeModal(homeworkModal);
-            }
-        }
-    });
-    
     // Ders programını sunucuya kaydet
     function saveSchedule() {
         // Sadece yöneticiler kaydedebilir
@@ -3648,6 +3626,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // 5 saniye sonra tekrar kontrol et
         setTimeout(modalSetupChecker, 5000);
     }, 3000);
+
+    document.getElementById('deleteModalBtn').addEventListener('click', () => {
+        deleteScheduleItem();
+    });
 }); 
 
 // Modal başlıklarına yenileme butonları ekle
