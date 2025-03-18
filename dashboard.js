@@ -5,45 +5,89 @@ document.addEventListener('DOMContentLoaded', () => {
     // Yenileme butonlarını ekle
     addRefreshButtonsToModals();
     
-    // Arka planda verileri yükle (performans iyileştirmesi)
-    setTimeout(() => {
-        console.log('Arka planda veriler yükleniyor...');
-        // Sınav notlarını arka planda yükle
-        if (!cachedGrades) {
-            fetch('/api/grades/get')
-                .then(response => response.json())
-                .then(data => {
-                    grades = data;
-                    cachedGrades = data;
-                    gradesCacheTimestamp = new Date().getTime();
-                    console.log('Sınav notları arka planda yüklendi');
-                })
-                .catch(error => {
-                    console.error('Sınav notları arka planda yüklenirken hata:', error);
-                });
-        }
+    // Sayfa hazır olduğunda bir kerelik bildirimi göster
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'loading-overlay';
+    loadingOverlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.2); z-index:9999; display:flex; justify-content:center; align-items:center; transition:opacity 0.5s';
+    
+    const loadingIndicator = document.createElement('div');
+    loadingIndicator.innerHTML = `
+        <div style="background:var(--card-bg); border-radius:8px; padding:20px; box-shadow:0 4px 15px rgba(0,0,0,0.1); text-align:center; max-width:90%; width:300px">
+            <div class="spinner" style="margin:0 auto 15px auto"></div>
+            <p style="margin:0; color:var(--text-color)">Uygulama hazırlanıyor...</p>
+        </div>
+    `;
+    loadingOverlay.appendChild(loadingIndicator);
+    document.body.appendChild(loadingOverlay);
+    
+    // Kaynakları aşamalı olarak yükle
+    const loadResources = () => {
+        console.log('Kaynaklar aşamalı olarak yükleniyor...');
         
-        // Kullanıcıları arka planda yükle
-        if (isAdmin && !cachedUsers) {
-            fetchWithTokenCheck('/api/users')
-                .then(response => response.json())
-                .then(data => {
-                    // Veri formatını kontrol et
-                    if (Array.isArray(data)) {
-                        cachedUsers = data;
-                        usersCacheTimestamp = new Date().getTime();
-                        console.log('Kullanıcılar arka planda yüklendi');
-                    } else if (data.users && Array.isArray(data.users)) {
-                        cachedUsers = data.users;
-                        usersCacheTimestamp = new Date().getTime();
-                        console.log('Kullanıcılar arka planda yüklendi');
+        // İlk aşama - sayfanın temel içeriği için gerekli veriler
+        setTimeout(() => {
+            // 500ms sonra ilk kritik verileri yükle (örn. ders programı)
+            initializeScheduleData();
+            
+            // 1 saniye sonra bildirime gerek olmayan ders programı verilerini hazırla
+            setTimeout(() => {
+                loadDataFromTable();
+                
+                // Yükleme göstergesini kapat
+                loadingOverlay.style.opacity = '0';
+                setTimeout(() => {
+                    document.body.removeChild(loadingOverlay);
+                }, 500);
+                
+                // İkinci aşama - geri kalan veriler için
+                setTimeout(() => {
+                    // Sınav notlarını arka planda yükle
+                    if (!cachedGrades) {
+                        console.log('Sınav notları arka planda yükleniyor...');
+                        fetch('/api/grades/get?meta_only=true')
+                            .then(response => response.json())
+                            .then(data => {
+                                grades = data;
+                                cachedGrades = data;
+                                gradesCacheTimestamp = new Date().getTime();
+                                console.log('Sınav notları arka planda yüklendi:', data.length);
+                            })
+                            .catch(error => {
+                                console.error('Sınav notları arka planda yüklenirken hata:', error);
+                            });
                     }
-                })
-                .catch(error => {
-                    console.error('Kullanıcılar arka planda yüklenirken hata:', error);
-                });
-        }
-    }, 1000);
+                    
+                    // Üçüncü aşama - en az önemli veriler
+                    setTimeout(() => {
+                        // Kullanıcıları arka planda yükle
+                        if (isAdmin && !cachedUsers) {
+                            console.log('Kullanıcılar arka planda yükleniyor...');
+                            fetchWithTokenCheck('/api/users?minimal=true')
+                                .then(response => response.json())
+                                .then(data => {
+                                    // Veri formatını kontrol et
+                                    if (Array.isArray(data)) {
+                                        cachedUsers = data;
+                                        usersCacheTimestamp = new Date().getTime();
+                                        console.log('Kullanıcılar arka planda yüklendi:', data.length);
+                                    } else if (data.users && Array.isArray(data.users)) {
+                                        cachedUsers = data.users;
+                                        usersCacheTimestamp = new Date().getTime();
+                                        console.log('Kullanıcılar arka planda yüklendi:', data.users.length);
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Kullanıcılar arka planda yüklenirken hata:', error);
+                                });
+                        }
+                    }, 3000);
+                }, 2000);
+            }, 1000);
+        }, 500);
+    };
+    
+    // Kaynak yüklemeyi başlat
+    loadResources();
     
     // Service worker'ı unregister etmek için
     if ('serviceWorker' in navigator) {
@@ -2273,14 +2317,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
             
-            // API'den notları al
-            fetch('/api/grades/get')
+            // API'den notların meta verilerini al (dosya içeriği olmadan)
+            fetch('/api/grades/get?meta_only=true')
                 .then(response => response.json())
                 .then(data => {
                     // Önbelleğe kaydet
                     grades = data;
                     cachedGrades = data;
                     gradesCacheTimestamp = new Date().getTime();
+                    console.log('Sınav notları meta verileri yüklendi:', data.length);
                     
                     displayGrades();
                 })
@@ -2467,8 +2512,23 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Dosya indirme fonksiyonu
     function downloadGradeFile(gradeId) {
-        // Yeni sekme/pencerede dosyayı aç
-        window.open(`/api/grades/download/${gradeId}`, '_blank');
+        console.log('Dosya indiriliyor:', gradeId);
+        
+        // İndirme URL'sini oluştur
+        const downloadUrl = `/api/grades/download/${gradeId}`;
+        
+        // Yeni sekme açılması yerine doğrudan indirme
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = ''; // Sunucu adını belirleyecek
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        
+        // Temizlik
+        setTimeout(() => {
+            document.body.removeChild(link);
+        }, 100);
     }
     
     // Not düzenleme modal'ını aç
@@ -2847,8 +2907,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </tr>
             `;
             
-            // API'den verileri al - token ile
-            fetchWithTokenCheck('/api/users')
+            // API'den verileri al - token ile ve minimal veri setiyle
+            fetchWithTokenCheck('/api/users?minimal=true')
                 .then(response => response.json())
                 .then(data => {
                     // Sunucu yanıt formatını kontrol et

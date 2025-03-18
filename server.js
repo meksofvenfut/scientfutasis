@@ -1035,66 +1035,68 @@ app.post('/api/register', (req, res) => {
 
 // 3. Kullanıcıları listeleme endpoint'i (sadece admin için)
 app.get('/api/users', (req, res) => {
-    const currentTime = getCurrentTimestamp();
-    console.log(`Kullanıcılar çekiliyor - Zaman: ${getTurkishTimeString()}`);
-  
     try {
-        let query;
-        if (isPg) {
-            // PostgreSQL sorgusu - küçük harfle sütun adları kullanır
-            query = `SELECT id, name, username, "usertype" as userType, "lastlogin" as lastLogin FROM users`;
-        } else {
-            query = `SELECT id, name, username, userType, lastLogin FROM users`;
+        const minimalRequest = req.query.minimal === 'true';
+        console.log(`Kullanıcı listesi isteği alındı. Minimal: ${minimalRequest}`);
+        
+        // Kullanıcı kimlik doğrulaması yap
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(401).json({ success: false, message: 'Yetkilendirme başlığı eksik' });
         }
         
-        console.log("Kullanıcılar için sorgu çalıştırılıyor:", query);
-      
-        db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error('Kullanıcılar çekilirken hata:', err.message);
-                return res.status(500).json({ 
-                    success: false, 
-                    message: 'Veritabanı hatası', 
-                    error: err.message 
+        // JWT tokenı çıkar ve doğrula
+        const token = authHeader.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ success: false, message: 'Token bulunamadı' });
+        }
+        
+        // Token'ı doğrula
+        jwt.verify(token, JWT_SECRET, (err, decoded) => {
+            if (err) {
+                console.error('Token doğrulama hatası:', err);
+                return res.status(401).json({ success: false, message: 'Geçersiz token' });
+            }
+            
+            // Sadece admin kullanıcılar tüm kullanıcıları görebilir
+            if (decoded.userType !== 'admin') {
+                return res.status(403).json({ success: false, message: 'Bu işlem için yönetici yetkisi gereklidir' });
+            }
+            
+            // Minimal isteklerde sadece gerekli alanları seç
+            let selectFields = '*';
+            if (minimalRequest) {
+                selectFields = 'id, name, username, userType, lastLogin';
+            }
+            
+            let query;
+            if (isPg) {
+                query = `SELECT ${selectFields} FROM users ORDER BY id ASC`;
+            } else {
+                query = `SELECT ${selectFields} FROM users ORDER BY id ASC`;
+            }
+            
+            db.all(query, [], (err, rows) => {
+                if (err) {
+                    console.error('Kullanıcılar çekilirken hata:', err);
+                    return res.status(500).json({ success: false, message: 'Veritabanı hatası' });
+                }
+                
+                // Kullanıcıların şifrelerini kaldır
+                const users = rows.map(user => {
+                    if (user.password) {
+                        const { password, ...userData } = user;
+                        return userData;
+                    }
+                    return user;
                 });
-            }
-            
-            if (!rows) {
-                console.log('Kullanıcı sonuçları undefined');
-                return res.json([]);
-            }
-            
-            const safeRows = Array.isArray(rows) ? rows : [];
-            
-            console.log(`${safeRows.length} adet kullanıcı kaydı bulundu.`);
-            if (safeRows.length > 0) {
-                console.log('İlk kullanıcı örneği:', safeRows[0]);
-            }
-            
-            // Kullanıcılarda type alanlarını düzelt
-            const cleanedRows = safeRows.map(user => {
-                // Kullanıcı tipi PostgreSQL'de küçük harfle gelebilir, normalize et
-                const userType = user.userType || user.usertype || 'student';
-                // Temiz bir nesne oluştur
-                return {
-                    id: user.id,
-                    name: user.name,
-                    username: user.username,
-                    userType: userType, // Normalize edilmiş değeri kullan
-                    lastLogin: user.lastLogin || user.lastlogin
-                };
+                
+                return res.json({ success: true, users });
             });
-            
-            // Direkt dizi olarak dön
-            return res.json(cleanedRows);
         });
     } catch (error) {
-        console.error('Kullanıcılar getirme hatası:', error);
-        return res.status(500).json({ 
-            success: false, 
-            message: 'Sunucu hatası', 
-            error: error.message 
-        });
+        console.error('Kullanıcı listesi alınırken hata:', error);
+        return res.status(500).json({ success: false, message: 'Sunucu hatası' });
     }
 });
 
@@ -2414,29 +2416,60 @@ app.delete('/api/announcements/delete/:id', (req, res) => {
 // Sınav notları için API endpoint'leri
 // 1. Tüm sınav notlarını getir
 app.get('/api/grades/get', (req, res) => {
-    console.log('Sınav notları getirme isteği alındı');
-    
-    let query;
-    
-    if (isPg) {
-        query = `SELECT * FROM grades ORDER BY "examDate" DESC`;
-    } else {
-        query = `SELECT * FROM grades ORDER BY examDate DESC`;
-    }
-    
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error(`Sınav notları çekilirken hata (${getTurkishTimeString()}):`, err);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Veritabanı hatası' 
-            });
+    try {
+        console.log('Sınav notları isteği alındı');
+        
+        // Sadece meta verileri isteniyor mu?
+        const metaOnly = req.query.meta_only === 'true';
+        console.log('Meta veri isteği:', metaOnly);
+        
+        let query;
+        let fields;
+        
+        if (metaOnly) {
+            // Dosya içeriği olmadan meta verileri seç
+            fields = 'id, title, lesson, type, "examDate", file_name, file_type, file_size, "createdAt", "updatedAt"';
+        } else {
+            // Tüm verileri seç
+            fields = '*';
         }
         
-        console.log(`${rows?.length || 0} adet sınav notu bulundu. Zaman: ${getTurkishTimeString()}`);
-        // Doğrudan dizi döndür, data wrap'i kullanma
-        res.json(rows || []);
-    });
+        if (isPg) {
+            query = `SELECT ${fields} FROM grades ORDER BY "createdAt" DESC`;
+        } else {
+            query = `SELECT ${fields} FROM grades ORDER BY createdAt DESC`;
+        }
+        
+        db.all(query, [], (err, rows) => {
+            if (err) {
+                console.error('Sınav notları alınırken hata oluştu:', err.message);
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Veritabanı hatası', 
+                    error: err.message 
+                });
+            }
+            
+            console.log(`${rows.length} sınav notu bulundu`);
+            
+            // Formatlanmış tarihler için veriyi düzenle
+            const formattedRows = rows.map(row => {
+                return {
+                    ...row,
+                    formattedDate: new Date(row.examDate).toLocaleDateString('tr-TR')
+                };
+            });
+            
+            return res.json(formattedRows);
+        });
+    } catch (error) {
+        console.error('Sınav notları alınırken hata oluştu:', error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Sunucu hatası', 
+            error: error.message 
+        });
+    }
 });
 
 // 2. Sınav notu ekleme
