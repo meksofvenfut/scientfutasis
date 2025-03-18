@@ -467,11 +467,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Modal işlemleri için elemanları seçiyoruz
     const scheduleModal = document.getElementById('scheduleModal');
-    const closeModalBtn = scheduleModal.querySelector('.close-modal');
+    const closeModalBtn = scheduleModal ? scheduleModal.querySelector('.close-modal') : null;
     
     // Ödevler modalı için elemanları seçiyoruz
     const homeworkModal = document.getElementById('homeworkModal');
-    const homeworkCloseBtn = homeworkModal.querySelector('.close-modal');
+    const homeworkCloseBtn = homeworkModal ? homeworkModal.querySelector('.close-modal') : null;
     const addHomeworkBtn = document.getElementById('addHomeworkBtn');
     const homeworkForm = document.getElementById('homeworkForm');
     const cancelHomeworkBtn = document.getElementById('cancelHomeworkBtn');
@@ -505,11 +505,11 @@ document.addEventListener('DOMContentLoaded', () => {
             item.classList.add('active');
             
             // İlgili modalı aç
-            if (index === 0) { // İlk ikon Ders Programı
+            if (index === 0 && scheduleModal) { // İlk ikon Ders Programı
                 openModal(scheduleModal);
-            } else if (index === 1) { // İkinci ikon Ödevler
+            } else if (index === 1 && homeworkModal) { // İkinci ikon Ödevler
                 openModal(homeworkModal);
-            } else if (index === 2) { // Üçüncü ikon Duyurular
+            } else if (index === 2 && announcementsModal) { // Üçüncü ikon Duyurular
                 openModal(announcementsModal);
                 fetchAnnouncements();
             }
@@ -680,88 +680,68 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Hücreyi düzenleme moduna geçir
     function makeEditable(cell) {
-        // Sadece yöneticiler düzenleyebilir
-        if (!isAdmin) {
-            console.log('Sadece yöneticiler ders programını düzenleyebilir.');
-            
-            // Kullanıcıya bildirim göster
-            const notification = document.createElement('div');
-            notification.textContent = 'Sadece yöneticiler ders programını düzenleyebilir!';
-            notification.style.cssText = 'position: fixed; top: 70px; right: 20px; background-color: #F44336; color: white; padding: 10px 15px; border-radius: 4px; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.2);';
-            document.body.appendChild(notification);
-            
-            // 3 saniye sonra bildirimi kaldır
-            setTimeout(() => {
-                notification.style.opacity = '0';
-                notification.style.transition = 'opacity 0.5s';
-                setTimeout(() => notification.remove(), 500);
-            }, 3000);
-            
-            return;
+        if (!cell) return; // Hücre yoksa işlemi sonlandır
+        
+        // Bir kere dinleyici eklenip eklenmediğini kontrol etmek için
+        if (cell.getAttribute('data-editable') === 'true') {
+            return; // Zaten düzenlenebilir yapılmış, tekrar yapma
         }
         
-        // Zaten düzenleme modundaysa çıkış yap
-        if (cell.classList.contains('editing')) {
-            return;
-        }
+        // Düzenlenebilir olarak işaretle
+        cell.setAttribute('data-editable', 'true');
         
-        // Açık olan diğer düzenleme alanlarını kapat
-        document.querySelectorAll('.editable-cell.editing').forEach(editingCell => {
-            const input = editingCell.querySelector('input');
-            if (input) {
-                editingCell.textContent = input.value;
-            }
-            editingCell.classList.remove('editing');
-        });
-        
-        const value = cell.textContent.trim();
-        const row = cell.getAttribute('data-row');
-        const col = cell.getAttribute('data-col');
-        
-        // Hücre içeriğini temizle ve düzenleme moduna geçir
-        const originalContent = cell.textContent;
-        cell.textContent = '';
-        cell.classList.add('editing');
-        
-        // Input oluştur ve ekle
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = value;
-        input.setAttribute('data-row', row);
-        input.setAttribute('data-col', col);
-        cell.appendChild(input);
-        
-        // Input'a odaklan
-        input.focus();
-        input.select();
-        
-        // Tab, Enter, Escape tuşu ve blur olaylarını ekle
-        input.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                input.blur();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                cell.textContent = originalContent;
-                cell.classList.remove('editing');
-            } else if (e.key === 'Tab') {
-                e.preventDefault(); // Tab'ın varsayılan davranışını engelle
+        cell.addEventListener('click', function() {
+            // Sadece admin veya öğretmenler düzenleyebilir
+            if (userInfo && (userInfo.userType === 'admin' || userInfo.userType === 'Yönetici' || userInfo.userType === 'teacher')) {
+                const value = this.textContent.trim();
+                const row = this.getAttribute('data-row');
+                const col = this.getAttribute('data-col');
                 
-                // Mevcut hücrenin değişikliklerini kaydet
-                saveCurrentCell(cell, input, row, col);
+                // Düzenleme alanını oluştur
+                const input = document.createElement('textarea');
+                input.value = value;
+                input.style.width = '100%';
+                input.style.height = '100%';
+                input.style.padding = '5px';
+                input.style.boxSizing = 'border-box';
+                input.style.border = 'none';
+                input.style.resize = 'none';
+                input.style.fontFamily = 'inherit';
+                input.style.fontSize = 'inherit';
                 
-                // Sonraki hücreyi bul ve düzenleme moduna geç
-                const nextCell = findNextCell(row, col, e.shiftKey);
-                if (nextCell) {
-                    makeEditable(nextCell);
-                }
+                // Hücrenin içeriğini temizle ve input'u ekle
+                this.innerHTML = '';
+                this.appendChild(input);
+                input.focus();
+                
+                // Enter veya ESC tuşuna basılınca düzenlemeyi bitir
+                input.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        saveCurrentCell(cell, input, row, col);
+                    } else if (e.key === 'Tab') {
+                        e.preventDefault();
+                        saveCurrentCell(cell, input, row, col);
+                        
+                        // Bir sonraki hücreye geç
+                        const nextCell = findNextCell(parseInt(row), parseInt(col), e.shiftKey);
+                        if (nextCell) {
+                            nextCell.click();
+                        }
+                    } else if (e.key === 'Escape') {
+                        // ESC tuşuna basılınca değişiklikleri iptal et
+                        cell.textContent = value;
+                    }
+                });
+                
+                // Input'tan çıkınca düzenlemeyi kaydet
+                input.addEventListener('blur', function() {
+                    saveCurrentCell(cell, input, row, col);
+                });
+            } else {
+                console.log('Düzenleme izniniz yok. Sadece yöneticiler değişiklik yapabilir.');
+                showNotification('Sadece yöneticiler ders programını düzenleyebilir.', 'error');
             }
-        });
-        
-        input.addEventListener('blur', function() {
-            if (!cell.contains(input)) return;
-            
-            saveCurrentCell(cell, input, row, col);
         });
     }
     
@@ -3627,9 +3607,13 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(modalSetupChecker, 5000);
     }, 3000);
 
-    document.getElementById('deleteModalBtn').addEventListener('click', () => {
-        deleteScheduleItem();
-    });
+    // deleteModalBtn elementinin varlığını kontrol et
+    const deleteModalBtn = document.getElementById('deleteModalBtn');
+    if (deleteModalBtn) {
+        deleteModalBtn.addEventListener('click', () => {
+            deleteScheduleItem();
+        });
+    }
 }); 
 
 // Modal başlıklarına yenileme butonları ekle
