@@ -824,7 +824,7 @@ html[data-theme="dark"] .light-icon {
     background-color: rgba(0, 0, 0, 0.7);
     z-index: 1500;
     overflow: hidden;
-    padding: 70px 0;
+    padding: 30px 0;
     box-sizing: border-box;
     display: flex;
     align-items: center;
