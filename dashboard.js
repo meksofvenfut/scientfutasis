@@ -2996,32 +2996,61 @@ document.addEventListener('DOMContentLoaded', () => {
         userTableBody.style.display = 'table-row-group';
         noUserMessage.style.display = 'none';
         
+        // Veri kontrolü - ilk kaydı konsola yazdır (debug için)
+        if (users.length > 0) {
+            console.log('İlk kullanıcı örneği:', users[0]);
+        }
+        
         // Her kullanıcı için tablo satırı oluştur
         users.forEach(user => {
             const row = document.createElement('tr');
             
-            // Kullanıcı tipi kontrolü
-            const userType = user.userType || 'student'; // userType tanımlı değilse varsayılan olarak student kullan
+            // Kullanıcı tipini normalleştir
+            let userType = 'student'; // Varsayılan değer
             
-            // Kullanıcı tipi gösterimi için CSS sınıfı
-            const userTypeClass = userType.toLowerCase();
+            // userType alanını kontrol et (null, undefined veya geçersiz değilse kullan)
+            if (user.userType) {
+                const validTypes = ['admin', 'teacher', 'student'];
+                const normalizedType = user.userType.toLowerCase();
+                
+                if (validTypes.includes(normalizedType)) {
+                    userType = normalizedType;
+                }
+            }
+            
+            // Kullanıcı tipi gösterimi için metin
             const userTypeText = {
                 'admin': 'Yönetici',
                 'teacher': 'Öğretmen',
                 'student': 'Öğrenci'
-            }[userType] || userType;
+            }[userType];
             
             // Son giriş formatını düzenle
-            const lastLoginDate = user.lastLogin ? new Date(user.lastLogin) : null;
-            const formattedLastLogin = lastLoginDate 
-                ? `${lastLoginDate.toLocaleDateString('tr-TR')} ${lastLoginDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}`
-                : 'Hiç giriş yapılmadı';
+            let formattedLastLogin = 'Hiç giriş yapılmadı';
+            
+            try {
+                if (user.lastLogin) {
+                    const lastLoginDate = new Date(user.lastLogin);
+                    // Geçerli bir tarih mi kontrol et
+                    if (!isNaN(lastLoginDate.getTime())) {
+                        formattedLastLogin = lastLoginDate.toLocaleString('tr-TR', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Tarih formatlama hatası:', error);
+            }
             
             row.innerHTML = `
-                <td>${user.id}</td>
+                <td>${user.id || ''}</td>
                 <td>${user.name || ''}</td>
                 <td>${user.username || ''}</td>
-                <td><span class="user-type-badge ${userTypeClass}">${userTypeText}</span></td>
+                <td><span class="user-type-badge ${userType}">${userTypeText}</span></td>
                 <td>${formattedLastLogin}</td>
                 <td class="action-buttons">
                     <button class="edit-button" onclick="editUserItem(${user.id})" title="Düzenle">

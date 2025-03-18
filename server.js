@@ -1064,16 +1064,31 @@ app.get('/api/users', (req, res) => {
             }
             
             // Minimal isteklerde sadece gerekli alanları seç
-            let selectFields = '*';
-            if (minimalRequest) {
-                selectFields = 'id, name, username, userType, lastLogin';
-            }
-            
             let query;
             if (isPg) {
-                query = `SELECT ${selectFields} FROM users ORDER BY id ASC`;
+                // PostgreSQL için özel sorgu - küçük harfle gelen sütun adlarını büyük harfe çevir
+                query = `
+                    SELECT 
+                        id, 
+                        name, 
+                        username, 
+                        usertype as "userType", 
+                        lastlogin as "lastLogin"
+                    FROM users 
+                    ORDER BY id ASC
+                `;
             } else {
-                query = `SELECT ${selectFields} FROM users ORDER BY id ASC`;
+                // SQLite için normal sorgu
+                query = `
+                    SELECT 
+                        id, 
+                        name, 
+                        username, 
+                        userType, 
+                        lastLogin 
+                    FROM users 
+                    ORDER BY id ASC
+                `;
             }
             
             db.all(query, [], (err, rows) => {
@@ -1082,16 +1097,33 @@ app.get('/api/users', (req, res) => {
                     return res.status(500).json({ success: false, message: 'Veritabanı hatası' });
                 }
                 
-                // Kullanıcıların şifrelerini kaldır
+                // Kullanıcıların şifrelerini kaldır ve son login değerini formatlıyoruz
                 const users = rows.map(user => {
-                    if (user.password) {
-                        const { password, ...userData } = user;
-                        return userData;
+                    let userData = { ...user };
+                    
+                    // Şifreyi kaldır 
+                    if (userData.password) {
+                        delete userData.password;
                     }
-                    return user;
+                    
+                    // userType normalize et (eğer null ise yerine 'student' kullan)
+                    userData.userType = userData.userType || 'student';
+                    
+                    // Admin, teacher, student değilse student kullan
+                    if (!['admin', 'teacher', 'student'].includes(userData.userType.toLowerCase())) {
+                        userData.userType = 'student';
+                    }
+                    
+                    return userData;
                 });
                 
-                return res.json({ success: true, users });
+                console.log('Kullanıcı verisi döndürülüyor:', users.length, 'kullanıcı');
+                
+                // API yanıtı
+                return res.json({ 
+                    success: true, 
+                    users: users
+                });
             });
         });
     } catch (error) {
