@@ -876,8 +876,9 @@ html[data-theme="dark"] .light-icon {
     align-items: center;
     position: sticky;
     top: 0;
-    background-color: var(--background-color);
-    z-index: 10;
+    background-color: var(--card-bg);
+    z-index: 1001;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 .modal-header h2 {
@@ -904,6 +905,30 @@ html[data-theme="dark"] .light-icon {
     max-height: calc(98vh - 100px);
     overflow-y: auto;
     overflow-x: hidden;
+}
+
+/* Özelleştirilmiş scrollbar stil tanımları */
+.modal-content::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.modal-content::-webkit-scrollbar-track,
+.modal-body::-webkit-scrollbar-track {
+    background: rgba(var(--accent-color-rgb), 0.05);
+    border-radius: 10px;
+}
+
+.modal-content::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb {
+    background: rgba(var(--accent-color-rgb), 0.4);
+    border-radius: 10px;
+    transition: background 0.3s ease;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover,
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(var(--accent-color-rgb), 0.6);
 }
 
 /* Ders Programı Tablosu */
