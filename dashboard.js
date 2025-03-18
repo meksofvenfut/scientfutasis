@@ -2911,19 +2911,24 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchWithTokenCheck('/api/users?minimal=true')
                 .then(response => response.json())
                 .then(data => {
+                    // Konsola veri formatını yaz
+                    console.log('Kullanıcı verileri format:', data);
+                    
+                    let users = [];
+                    
                     // Sunucu yanıt formatını kontrol et
                     if (Array.isArray(data)) {
-                        // Önbelleğe kaydet
-                        cachedUsers = data;
-                        usersCacheTimestamp = new Date().getTime();
-                        
-                        displayUsers(data);
+                        // Direkt dizi olarak gelmiş
+                        users = data;
+                        console.log('Kullanıcılar yüklendi (dizi):', users.length);
                     } else if (data.users && Array.isArray(data.users)) {
-                        // Önbelleğe kaydet
-                        cachedUsers = data.users;
-                        usersCacheTimestamp = new Date().getTime();
-                        
-                        displayUsers(data.users);
+                        // Obje içinde users dizisi olarak gelmiş
+                        users = data.users;
+                        console.log('Kullanıcılar yüklendi (users dizisi):', users.length);
+                    } else if (data.success === true && data.users && Array.isArray(data.users)) {
+                        // Success: true formatı
+                        users = data.users;
+                        console.log('Kullanıcılar yüklendi (success:true):', users.length);
                     } else if (data.success === false) {
                         console.error('Kullanıcılar yüklenirken hata:', data.message);
                         userTableBody.innerHTML = `
@@ -2935,6 +2940,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </td>
                             </tr>
                         `;
+                        return;
                     } else {
                         console.error('Kullanıcı verisi beklendiği formatta değil:', data);
                         userTableBody.innerHTML = `
@@ -2946,7 +2952,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                 </td>
                             </tr>
                         `;
+                        return;
                     }
+                    
+                    // Önbelleğe kaydet
+                    cachedUsers = users;
+                    usersCacheTimestamp = new Date().getTime();
+                    
+                    // Kullanıcıları göster
+                    displayUsers(users);
                 })
                 .catch(error => {
                     console.error('Kullanıcılar yüklenirken hata:', error);
@@ -2986,13 +3000,16 @@ document.addEventListener('DOMContentLoaded', () => {
         users.forEach(user => {
             const row = document.createElement('tr');
             
+            // Kullanıcı tipi kontrolü
+            const userType = user.userType || 'student'; // userType tanımlı değilse varsayılan olarak student kullan
+            
             // Kullanıcı tipi gösterimi için CSS sınıfı
-            const userTypeClass = user.userType.toLowerCase();
+            const userTypeClass = userType.toLowerCase();
             const userTypeText = {
                 'admin': 'Yönetici',
                 'teacher': 'Öğretmen',
                 'student': 'Öğrenci'
-            }[user.userType] || user.userType;
+            }[userType] || userType;
             
             // Son giriş formatını düzenle
             const lastLoginDate = user.lastLogin ? new Date(user.lastLogin) : null;
@@ -3002,8 +3019,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             row.innerHTML = `
                 <td>${user.id}</td>
-                <td>${user.name}</td>
-                <td>${user.username}</td>
+                <td>${user.name || ''}</td>
+                <td>${user.username || ''}</td>
                 <td><span class="user-type-badge ${userTypeClass}">${userTypeText}</span></td>
                 <td>${formattedLastLogin}</td>
                 <td class="action-buttons">
