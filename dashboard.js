@@ -1,4 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Tüm modalları kapat - otomatik açılan modal sorunu için
+    closeAllModals();
+    
     // Service worker'ı unregister etmek için
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(registrations) {
@@ -591,6 +594,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Modal Açma/Kapama İşlevleri
     function openModal(modalElement) {
+        // Parametre kontrolü - geçersiz modal ise işlemi iptal et
+        if (!modalElement || typeof modalElement !== 'object') {
+            console.log('Geçersiz modal referansı:', modalElement);
+            return;
+        }
+
         // Önce açık olan tüm modalları kapat
         closeAllModals();
         
@@ -2834,6 +2843,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Kullanıcı düzenleme modalını açma
     function editUserItem(userId) {
+        // Eğer bilerek çağrılmadıysa (document yüklenirken otomatik çağrı) işlemi yok say
+        if (!userId || userId === undefined) {
+            console.log('editUserItem geçersiz userId ile çağrıldı');
+            return;
+        }
+        
         // Kullanıcı bilgilerini getir
         fetch(`/api/users/${userId}`)
             .then(response => response.json())
@@ -2864,6 +2879,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Kullanıcı silme modalını açma
     function deleteUserItem(userId) {
+        // Eğer bilerek çağrılmadıysa (document yüklenirken otomatik çağrı) işlemi yok say
+        if (!userId || userId === undefined) {
+            console.log('deleteUserItem geçersiz userId ile çağrıldı');
+            return;
+        }
+        
         // Kullanıcı bilgilerini getir
         fetch(`/api/users/${userId}`)
             .then(response => response.json())
