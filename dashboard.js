@@ -2,6 +2,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tüm modalları kapat - otomatik açılan modal sorunu için
     closeAllModals();
     
+    // Yenileme butonlarını ekle
+    addRefreshButtonsToModals();
+    
     // Service worker'ı unregister etmek için
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(function(registrations) {
@@ -592,6 +595,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // Önbellek değişkenleri - Modal verilerini saklayacak
+    let cachedGrades = null;
+    let cachedUsers = null;
+    let gradesCacheTimestamp = null;
+    let usersCacheTimestamp = null;
+    const CACHE_EXPIRY = 5 * 60 * 1000; // 5 dakika (milisaniye)
+    
     // Modal Açma/Kapama İşlevleri
     function openModal(modalElement) {
         // Parametre kontrolü - geçersiz modal ise işlemi iptal et
@@ -620,9 +630,25 @@ document.addEventListener('DOMContentLoaded', () => {
         
         hasChanges = false; // Modal açıldığında değişiklik durumunu sıfırla
         
-        // Ödevler modalı açıldıysa ödevleri yükle
+        // Modal'a göre veri yükleme - Önbellekten yükle
         if (modalElement === homeworkModal) {
             fetchHomeworks();
+        } else if (modalElement === gradesModal) {
+            if (isDataCached(cachedGrades, gradesCacheTimestamp)) {
+                console.log('Önbellekten sınav notları yükleniyor...');
+                displayGrades();
+            } else {
+                console.log('API\'den sınav notları yükleniyor...');
+                fetchGrades();
+            }
+        } else if (modalElement === userManagementModal) {
+            if (isDataCached(cachedUsers, usersCacheTimestamp)) {
+                console.log('Önbellekten kullanıcılar yükleniyor...');
+                displayUsers(cachedUsers);
+            } else {
+                console.log('API\'den kullanıcılar yükleniyor...');
+                fetchUsers();
+            }
         }
     }
 
@@ -801,6 +827,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             return;
         }
+    }
+    
+    // Önbellek kontrolü için yardımcı fonksiyon
+    function isDataCached(data, timestamp) {
+        if (!data || !timestamp) return false;
+        const now = new Date().getTime();
+        return (now - timestamp) < CACHE_EXPIRY;
     }
     
     // Ödevler için fonksiyonlar
@@ -2204,7 +2237,11 @@ document.addEventListener('DOMContentLoaded', () => {
             fetch('/api/grades/get')
                 .then(response => response.json())
                 .then(data => {
+                    // Önbelleğe kaydet
                     grades = data;
+                    cachedGrades = data;
+                    gradesCacheTimestamp = new Date().getTime();
+                    
                     displayGrades();
                 })
                 .catch(error => {
@@ -2755,25 +2792,75 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Kullanıcıları sunucudan çekme
     function fetchUsers() {
-        fetchWithTokenCheck('/api/users')
-            .then(response => response.json())
-            .then(data => {
-                // Sunucu artık direkt kullanıcı dizisi dönüyor, eskiden success/users yapısı vardı
-                console.log('Kullanıcı verileri:', data);
-                
-                if (Array.isArray(data)) {
-                    displayUsers(data);
-                } else if (data.users && Array.isArray(data.users)) {
-                    displayUsers(data.users);
-                } else {
-                    console.error('Kullanıcı verisi beklendiği formatta değil:', data);
-                    showNotification('Kullanıcılar yüklenirken bir hata oluştu.', 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Kullanıcılar çekilirken hata oluştu:', error);
-                showNotification('Kullanıcılar yüklenirken bir hata oluştu.', 'error');
-            });
+        const userTableBody = document.getElementById('userTableBody');
+        
+        if (userTableBody) {
+            // Yükleme göstergesini göster
+            userTableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="loading-cell">
+                        <div class="loading-indicator">
+                            <div class="spinner"></div>
+                            <p>Kullanıcılar yükleniyor...</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            
+            // API'den verileri al - token ile
+            fetchWithTokenCheck('/api/users')
+                .then(response => response.json())
+                .then(data => {
+                    // Sunucu yanıt formatını kontrol et
+                    if (Array.isArray(data)) {
+                        // Önbelleğe kaydet
+                        cachedUsers = data;
+                        usersCacheTimestamp = new Date().getTime();
+                        
+                        displayUsers(data);
+                    } else if (data.users && Array.isArray(data.users)) {
+                        // Önbelleğe kaydet
+                        cachedUsers = data.users;
+                        usersCacheTimestamp = new Date().getTime();
+                        
+                        displayUsers(data.users);
+                    } else if (data.success === false) {
+                        console.error('Kullanıcılar yüklenirken hata:', data.message);
+                        userTableBody.innerHTML = `
+                            <tr>
+                                <td colspan="6" class="error-cell">
+                                    <div class="error-message">
+                                        <p>Kullanıcılar yüklenirken bir hata oluştu: ${data.message || 'Bilinmeyen hata'}</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    } else {
+                        console.error('Kullanıcı verisi beklendiği formatta değil:', data);
+                        userTableBody.innerHTML = `
+                            <tr>
+                                <td colspan="6" class="error-cell">
+                                    <div class="error-message">
+                                        <p>Kullanıcılar yüklenirken bir hata oluştu: Geçersiz veri formatı</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Kullanıcılar yüklenirken hata:', error);
+                    userTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="error-cell">
+                                <div class="error-message">
+                                    <p>Kullanıcılar yüklenirken bir hata oluştu. Lütfen sayfayı yenileyip tekrar deneyin.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+        }
     }
     
     // Kullanıcıları tabloda gösterme
@@ -3112,3 +3199,58 @@ document.addEventListener('DOMContentLoaded', () => {
         return scheduleData;
     }
 }); 
+
+// Modal başlıklarına yenileme butonları ekle
+function addRefreshButtonsToModals() {
+    // Sınav notları modalı için refresh butonu
+    const gradesModalHeader = document.querySelector('#gradesModal .modal-header');
+    if (gradesModalHeader) {
+        const refreshButton = document.createElement('button');
+        refreshButton.className = 'refresh-button';
+        refreshButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span>Yenile</span>
+        `;
+        refreshButton.addEventListener('click', function() {
+            // Önbelleği sıfırla ve yeniden yükle
+            cachedGrades = null;
+            gradesCacheTimestamp = null;
+            fetchGrades();
+        });
+        
+        // Başlık ile kapatma butonu arasına ekle
+        const closeButton = gradesModalHeader.querySelector('.close-modal-btn');
+        gradesModalHeader.insertBefore(refreshButton, closeButton);
+    }
+    
+    // Kullanıcı yönetimi modalı için refresh butonu
+    const userModalHeader = document.querySelector('#userManagementModal .modal-header');
+    if (userModalHeader) {
+        const refreshButton = document.createElement('button');
+        refreshButton.className = 'refresh-button';
+        refreshButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>
+                <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            <span>Yenile</span>
+        `;
+        refreshButton.addEventListener('click', function() {
+            // Önbelleği sıfırla ve yeniden yükle
+            cachedUsers = null;
+            usersCacheTimestamp = null;
+            fetchUsers();
+        });
+        
+        // Başlık ile kapatma butonu arasına ekle
+        const closeButton = userModalHeader.querySelector('.close-modal-btn');
+        userModalHeader.insertBefore(refreshButton, closeButton);
+    }
+} 
