@@ -815,7 +815,7 @@ html[data-theme="dark"] .light-icon {
 
 /* Modal Styles */
 .modal {
-    display: none;
+    display: none !important;
     position: fixed;
     top: 0;
     left: 0;
@@ -825,12 +825,20 @@ html[data-theme="dark"] .light-icon {
     z-index: 1500;
     overflow: hidden;
     box-sizing: border-box;
+    visibility: hidden !important;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+}
+
+.modal.visible {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1;
 }
 
 .modal[style*="display:"] {
     display: flex !important;
-    align-items: center;
-    justify-content: center;
+    visibility: visible !important;
 }
 
 .main-content .modal {
