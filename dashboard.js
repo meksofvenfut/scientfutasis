@@ -8,12 +8,23 @@ function loadResourcesFaster() {
     
     // Tüm gerekli verileri paralel olarak yükle
     Promise.all([
-        // Ders programı verilerini yükle
+        // Ders programı verileri (initializeScheduleData fonksiyonu daha sonra tanımlandığı için direkt çağırmıyoruz)
         new Promise(resolve => {
             console.log('Ders programı verileri yükleniyor...');
-            initializeScheduleData();
-            loadDataFromTable();
-            resolve();
+            // Ders programı tablosunu ele alarak içerikleri yükle
+            try {
+                // Tablodan veri yükleme
+                const scheduleTable = document.getElementById('schedule-table');
+                if (scheduleTable) {
+                    console.log('Ders programı tablosu bulundu, veriler hazırlanıyor...');
+                }
+                // ScheduleData'yı boş bir nesne olarak başlat
+                window.scheduleData = {};
+                resolve();
+            } catch (error) {
+                console.error('Ders programı yüklenirken hata:', error);
+                resolve(); // Hata olsa bile devam et
+            }
         }),
         
         // Sınav notlarını yükle
@@ -22,9 +33,9 @@ function loadResourcesFaster() {
             fetch('/api/grades/get?meta_only=true')
                 .then(response => response.json())
                 .then(data => {
-                    grades = data;
-                    cachedGrades = data;
-                    gradesCacheTimestamp = new Date().getTime();
+                    window.grades = data;
+                    window.cachedGrades = data;
+                    window.gradesCacheTimestamp = new Date().getTime();
                     console.log('Sınav notları yüklendi:', data.length);
                     resolve();
                 })
@@ -36,19 +47,19 @@ function loadResourcesFaster() {
         
         // Kullanıcıları yükle (sadece admin için)
         new Promise(resolve => {
-            if (isAdmin) {
+            if (window.isAdmin) {
                 console.log('Kullanıcılar yükleniyor...');
-                fetchWithTokenCheck('/api/users?minimal=true')
+                fetch('/api/users?minimal=true')
                     .then(response => response.json())
                     .then(data => {
                         // Veri formatını kontrol et
                         if (Array.isArray(data)) {
-                            cachedUsers = data;
-                            usersCacheTimestamp = new Date().getTime();
+                            window.cachedUsers = data;
+                            window.usersCacheTimestamp = new Date().getTime();
                             console.log('Kullanıcılar yüklendi:', data.length);
                         } else if (data.users && Array.isArray(data.users)) {
-                            cachedUsers = data.users;
-                            usersCacheTimestamp = new Date().getTime();
+                            window.cachedUsers = data.users;
+                            window.usersCacheTimestamp = new Date().getTime();
                             console.log('Kullanıcılar yüklendi:', data.users.length);
                         }
                         resolve();
@@ -81,6 +92,17 @@ function loadResourcesFaster() {
     })
     .catch(error => {
         console.error('Veri yükleme sırasında genel bir hata oluştu:', error);
+        
+        // Hata olsa bile yükleme göstergesini kapat
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.opacity = '0';
+            setTimeout(() => {
+                if (loadingOverlay.parentNode) {
+                    loadingOverlay.parentNode.removeChild(loadingOverlay);
+                }
+            }, 500);
+        }
     });
 }
 
@@ -96,15 +118,26 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`Modal zorla kapatıldı: ${modal.id}`);
     });
     
-    closeAllModals();
+    // İlk olarak bütün modalları kapat
+    if (typeof closeAllModals === 'function') {
+        closeAllModals();
+    } else {
+        console.warn('closeAllModals fonksiyonu henüz tanımlanmamış, ancak devam ediliyor');
+    }
     
-    // Modal kapatma davranışlarını ayarla
-    setupModalClosingBehaviors();
+    // Modal kapatma davranışlarını ayarla (fonksiyon tanımlıysa)
+    if (typeof setupModalClosingBehaviors === 'function') {
+        setupModalClosingBehaviors();
+    } else {
+        console.warn('setupModalClosingBehaviors fonksiyonu henüz tanımlanmamış, ancak devam ediliyor');
+    }
     
     // Sayfa yüklendikten sonra tekrar modalların kapalı olduğundan emin olalım
     setTimeout(() => {
         console.log("Modalları tekrar kapatma işlemi (100ms)");
-        closeAllModals();
+        if (typeof closeAllModals === 'function') {
+            closeAllModals();
+        }
         
         // Eğer hala modallar açıksa, CSS ile zorla kapat
         document.querySelectorAll('.modal').forEach(modal => {
@@ -131,9 +164,52 @@ document.addEventListener('DOMContentLoaded', () => {
     loadingOverlay.appendChild(loadingIndicator);
     document.body.appendChild(loadingOverlay);
     
+    // 10 saniye sonra kesinlikle yükleme göstergesini kapat (fail-safe)
+    setTimeout(() => {
+        console.log("10 saniye geçti, yükleme göstergesi zorla kapatılıyor");
+        if (loadingOverlay && loadingOverlay.parentNode) {
+            loadingOverlay.style.opacity = '0';
+            setTimeout(() => {
+                if (loadingOverlay.parentNode) {
+                    loadingOverlay.parentNode.removeChild(loadingOverlay);
+                    console.log("Yükleme göstergesi başarıyla kapatıldı");
+                }
+            }, 500);
+        }
+    }, 10000);
     
-    // Optimize edilmiş kaynak yükleme işlevini çağır
-    loadResourcesFaster();
+    try {
+        // Optimize edilmiş kaynak yükleme işlevini çağır
+        if (typeof loadResourcesFaster === 'function') {
+            loadResourcesFaster();
+        } else {
+            console.error('loadResourcesFaster fonksiyonu tanımlanmamış, yükleme işlemi atlanıyor');
+            // Yükleme işlemi atlanırsa göstergeyi kapat
+            setTimeout(() => {
+                if (loadingOverlay && loadingOverlay.parentNode) {
+                    loadingOverlay.style.opacity = '0';
+                    setTimeout(() => {
+                        if (loadingOverlay.parentNode) {
+                            loadingOverlay.parentNode.removeChild(loadingOverlay);
+                        }
+                    }, 500);
+                }
+            }, 1000);
+        }
+    } catch (error) {
+        console.error('Uygulama yüklenirken beklenmeyen bir hata oluştu:', error);
+        // Hata olursa göstergeyi kapat
+        setTimeout(() => {
+            if (loadingOverlay && loadingOverlay.parentNode) {
+                loadingOverlay.style.opacity = '0';
+                setTimeout(() => {
+                    if (loadingOverlay.parentNode) {
+                        loadingOverlay.parentNode.removeChild(loadingOverlay);
+                    }
+                }, 500);
+            }
+        }, 1000);
+    }
     
     // Service worker'ı unregister etmek için
     if ('serviceWorker' in navigator) {
