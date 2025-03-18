@@ -3,6 +3,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tüm modalları kapat - otomatik açılan modal sorunu için
     closeAllModals();
     
+    // Sayfa yüklendikten sonra tekrar modalların kapalı olduğundan emin olalım
+    setTimeout(() => {
+        closeAllModals();
+    }, 100);
+    
     // Sayfa hazır olduğunda bir kerelik bildirimi göster
     const loadingOverlay = document.createElement('div');
     loadingOverlay.id = 'loading-overlay';
@@ -25,11 +30,17 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // İlk aşama - sayfanın temel içeriği için gerekli veriler
         setTimeout(() => {
+            // Tekrar modalları kapatmayı dene
+            closeAllModals();
+            
             // 500ms sonra ilk kritik verileri yükle (örn. ders programı)
             initializeScheduleData();
             
             // 1 saniye sonra bildirime gerek olmayan ders programı verilerini hazırla
             setTimeout(() => {
+                // Son kontrol - tüm modalları kapattığımızdan emin olalım
+                closeAllModals();
+                
                 loadDataFromTable();
                 
                 // Yükleme göstergesini kapat
@@ -37,6 +48,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => {
                     document.body.removeChild(loadingOverlay);
                 }, 500);
+                
+                // Modalların erken açılmasını engelle
+                closeAllModals();
                 
                 // İkinci aşama - geri kalan veriler için
                 setTimeout(() => {
@@ -761,17 +775,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Tüm modalları kapatmayı sağlayan fonksiyon
     function closeAllModals() {
+        console.log('Tüm modallar kapatılıyor...');
+        
+        // Tüm modalları al
         const allModals = document.querySelectorAll('.modal');
+        
+        // Her bir modalı kapat
         allModals.forEach(modal => {
+            // Önce display:none yap
             modal.style.display = 'none';
+            
+            // Forceyle düzgün kapanması için ek adım
+            setTimeout(() => {
+                modal.style.display = 'none';
+            }, 10);
         });
-        document.body.style.overflow = ''; // Arka plan scrollunu geri aç
+        
+        // Arka plan scrollunu geri aç
+        document.body.style.overflow = '';
         
         // Alt blok ikonlarındaki active efektini kaldır
         document.querySelectorAll('.icon-item').forEach(item => {
             item.classList.remove('active');
             item.classList.remove('hovered');
         });
+        
+        // Modalların kapatıldığını logla
+        console.log('Modallar kapatıldı');
     }
 
     // ESC tuşuyla açık olan modalı kapat
